@@ -246,8 +246,10 @@ class TestSingleStepContainer(AbstractSingleStepContainerTest):
             self.dc.uuid = str(uuid.uuid4())
 
     def test_fileformat_detection(self):
-        open("test.zip", "w").write("test123")
-        open("test.h5dc", "w").write("test123")
+        with open("test.zip", "w") as zf:
+            zf.write("test123")
+        with open("test.h5dc", "w") as hf:
+            hf.write("test123")
 
         with self.assertRaisesRegex(RuntimeError, r"Unknown file format\."):
             Container(file="test.zip")
