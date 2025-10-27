@@ -38,7 +38,7 @@ from .container import MODELVERSION as modelVersion
 from .container import AbstractContainer, timestamp
 from .filebase import AbstractFile
 
-__version__ = "1.1.6"
+__version__ = "1.2.0b1"
 
 suffixes = {}
 classes = {}
@@ -63,19 +63,13 @@ def register(
 
     if isinstance(fclass, str):
         if pclass is not None:
-            raise RuntimeError(
-                "Alias %s:%s with default class!" % (suffix, fclass)
-            )
+            raise RuntimeError("Alias %s:%s with default class!" % (suffix, fclass))
         fclass = suffixes[fclass]
 
-    # Simple sanity check for the class interface
-    for method in ("encode", "decode", "hash"):
-        if not hasattr(fclass, method) or not callable(
-            getattr(fclass, method)
-        ):
-            raise RuntimeError(
-                "No method %s() in class for suffix '%s'!" % (method, suffix)
-            )
+    if not issubclass(fclass, AbstractFile):
+        raise RuntimeError(
+            f"Conversion class {fclass.__name__} is not derived from AbstractFile!"
+        )
 
     # Register suffix
     suffixes[suffix] = fclass
@@ -105,7 +99,7 @@ for name in ("filebase", "fileimage", "filenumpy"):
 
 # Inject certain known file formats into the container class
 class Container(AbstractContainer):
-    """Scientific data container."""
+    """Scientific data container with zip export default."""
 
     _suffixes = suffixes
     _classes = classes
