@@ -17,31 +17,37 @@
 #
 ##########################################################################
 
+
 import cv2 as cv
 import numpy as np
+from h5py import Dataset as h5Dataset
+from h5py import Group as h5Group
 
 from .filebase import AbstractFile
 
 
 class PngFile(AbstractFile):
+    """Data conversion class for PNG image."""
 
-    """ Data conversion class for PNG image. """
+    def encode_zip(self):
+        """Convert image to bytes string."""
 
-    def encode(self):
+        return cv.imencode(".png", self.data)[1].tobytes()
 
-        """ Convert image to bytes string. """
-
-        return cv.imencode('.png', self.data)[1].tobytes()
-
-    def decode(self, data):
-
-        """ Decode image from bytes string. """
-
+    def decode_zip(self, data):
+        """Decode image from bytes string."""
         flags = cv.IMREAD_ANYDEPTH | cv.IMREAD_ANYCOLOR
         self.data = np.frombuffer(data, dtype=np.uint8)
         self.data = cv.imdecode(self.data, flags=flags)
 
+    def encode_hdf5(self, group: h5Group, name: str):
+        """Create image byte string as htf5 dataset."""
+        group.create_dataset(name, data=np.void(self.encode_zip()))
+
+    def decode_hdf5(self, dataset: h5Dataset):
+        self.decode_zip(dataset[()].tobytes())
+
 
 register = [
     ("png", PngFile, None),
-    ]
+]

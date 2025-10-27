@@ -20,6 +20,8 @@
 import io
 
 import numpy as np
+from h5py import Dataset as h5Dataset
+from h5py import Group as h5Group
 
 from .filebase import AbstractFile
 
@@ -29,7 +31,7 @@ class NpyFile(AbstractFile):
 
     allow_pickle = False
 
-    def encode(self):
+    def encode_zip(self):
         """Convert NumPy array to bytes string."""
 
         with io.BytesIO() as fp:
@@ -38,13 +40,19 @@ class NpyFile(AbstractFile):
             data = fp.read()
         return data
 
-    def decode(self, data):
+    def decode_zip(self, data):
         """Decode NumPy array from bytes string."""
 
         with io.BytesIO() as fp:
             fp.write(data)
             fp.seek(0)
             self.data = np.load(fp, allow_pickle=self.allow_pickle)
+
+    def encode_hdf5(self, group: h5Group, name: str):
+        group.create_dataset(name, data=np.void(self.encode_zip()))
+
+    def decode_hdf5(self, dataset: h5Dataset):
+        self.decode_zip(dataset[()].tobytes())
 
 
 register = [

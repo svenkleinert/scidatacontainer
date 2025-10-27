@@ -15,14 +15,18 @@ import copy
 import hashlib
 import io
 import json
+import os.path
 import typing
 import uuid
+import warnings
 from abc import ABC
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import requests
+from h5py import Dataset as h5Dataset
+from h5py import File as h5File
 
 from .config import load_config
 from .filebase import BinaryFile, JsonFile, TextFile
@@ -42,6 +46,14 @@ def timestamp() -> str:
         str: timestamp as string
     """
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _detect_fileformat(content: bytes) -> str:
+    if content[:4].hex() in ["504b0304", "504b0506", "504b0708"]:
+        return "zip"
+    if content[:8].hex() == "894844460d0a1a0a":
+        return "hdf5"
+    raise RuntimeError("Unknown file format.")
 
 
 ##########################################################################
@@ -70,6 +82,7 @@ class AbstractContainer(ABC):
         config: dict = None,
         compression: int = ZIP_DEFLATED,
         compresslevel: int = -1,
+        fileformat: str | None = None,
         **kwargs,
     ):
         """Construct a DataContainer object.
@@ -90,6 +103,7 @@ class AbstractContainer(ABC):
             compression: Numeric constant for the compression method
             compresslevel: Level of compression, 0-fastest, 9-best compression
         """
+
         self.kwargs = {
             "items": items,
             "file": file,
@@ -97,6 +111,7 @@ class AbstractContainer(ABC):
             "config": config,
             "compression": compression,
             "compresslevel": compresslevel,
+            "fileformat": fileformat,
         }
         self.kwargs.update(kwargs)
 
@@ -104,6 +119,7 @@ class AbstractContainer(ABC):
 
         # Load variables from kwargs in namespace
         n = SimpleNamespace(**self.kwargs)
+        self.fileformat = self.kwargs["fileformat"] or "zip"
 
         # Container must be mutable initially
         self.mutable = True
@@ -125,8 +141,8 @@ class AbstractContainer(ABC):
 
         # Download container from server
         elif n.uuid is not None:
-            server = self._config["server"]
-            key = self._config["key"]
+            server = self.kwargs.get("server", self._config["server"])
+            key = self.kwargs.get("key", self._config["key"])
             self._download(uuid=n.uuid, server=server, key=key)
 
         # No data source
@@ -138,6 +154,17 @@ class AbstractContainer(ABC):
 
         # Check validity of author ORCID
         self._norm_orcid()
+
+        # Warn if fileformat was specified but loaded file has a different format
+        if (
+            self.kwargs["fileformat"] is not None
+            and self.fileformat != self.kwargs["fileformat"]
+        ):
+            warnings.warn(
+                f"A file format was provided but the loaded/downloaded file has a different format! ({self.kwargs['fileformat']} != {self.fileformat})",
+                RuntimeWarning,
+                stacklevel=2,
+            )
 
         self.__post_init__()
 
@@ -221,7 +248,7 @@ class AbstractContainer(ABC):
             raise RuntimeError("Immutable container!")
 
         # Get file extension
-        ext = path.rsplit(".", 1)[1]
+        ext = path.rsplit(".", 1)[-1]
 
         # Unregistered file extension
         if ext not in self._suffixes:
@@ -243,8 +270,7 @@ class AbstractContainer(ABC):
                     item = cls(data)
                 else:
                     raise RuntimeError(
-                        "No matching file format found for "
-                        + "item '%s'!" % path
+                        "No matching file format found for " + "item '%s'!" % path
                     )
 
         # Registered file extension
@@ -485,44 +511,6 @@ class AbstractContainer(ABC):
             content.pop(key, None)
         self.validate_content()
 
-    def encode(self):
-        """Encode container as ZIP package. Return package as binary
-        string.
-        """
-
-        # Check/format of author ORCID
-        self._norm_orcid()
-
-        items = {p: self._items[p].encode() for p in self.items()}
-        with io.BytesIO() as f:
-            with ZipFile(
-                f,
-                "w",
-                compression=self.compression,
-                compresslevel=self.compresslevel,
-            ) as fp:
-                for path in sorted(items.keys()):
-                    fp.writestr(path, items[path])
-            f.seek(0)
-            data = f.read()
-        return data
-
-    def decode(self, data: bytes, validate: bool = True, strict: bool = True):
-        """Take ZIP package as binary string. Read items from the
-        package and store them in this object.
-
-        Arguments:
-            data: Bytestring containing the ZIP DataContainer.
-            validate: If true, validate the content.
-            strict: If true, validate the hash, too.
-        """
-        with io.BytesIO() as f:
-            f.write(data)
-            f.seek(0)
-            with ZipFile(f, "r") as fp:
-                items = {p: fp.read(p) for p in fp.namelist()}
-        self._store(items, validate, strict)
-
     def write(self, fn: str, data: bytes = None):
         """Write the container to a ZIP package file.
 
@@ -538,6 +526,16 @@ class AbstractContainer(ABC):
             self["content.json"]["storageTime"] = timestamp()
         if data is None:
             data = self.encode()
+
+        if (
+            self.fileformat.lower() in ["zip", "zdc"]
+            and not fn.endswith(("zip", "zdc"))
+        ) or (
+            self.fileformat in ["hdf5", "h5", "h5dc"]
+            and not fn.endswith(("hdf5", "h5", "h5dc"))
+        ):
+            pass
+
         with open(fn, "wb") as fp:
             fp.write(data)
         self.mutable = not (
@@ -550,6 +548,8 @@ class AbstractContainer(ABC):
         """
         with open(fn, "rb") as fp:
             data = fp.read()
+            self.fileformat = _detect_fileformat(data)
+
         self.decode(data, False, strict)
         self.mutable = not (
             self["content.json"]["static"] or self["content.json"]["complete"]
@@ -607,9 +607,7 @@ class AbstractContainer(ABC):
                 if isinstance(data, dict) and data["static"]:
                     self._download(uuid=data["id"], server=server, key=key)
                     return
-            raise requests.HTTPError(
-                "400 Bad Request: Invalid container " + "content"
-            )
+            raise requests.HTTPError("400 Bad Request: Invalid container " + "content")
 
         # Unauthorized access
         elif response.status_code == 403:
@@ -621,9 +619,7 @@ class AbstractContainer(ABC):
 
         # Invalid container format
         elif response.status_code == 415:
-            raise requests.HTTPError(
-                "415 Unsupported: Invalid container" + "format"
-            )
+            raise requests.HTTPError("415 Unsupported: Invalid container" + "format")
 
         # Standard exception handler for other HTTP status codes
         else:
@@ -652,9 +648,7 @@ class AbstractContainer(ABC):
         # Download container as byte stream from the server
         try:
             url = server + "/api/datasets/" + uuid + "/download/"
-            response = requests.get(
-                url, headers={"Authorization": "Token " + key}
-            )
+            response = requests.get(url, headers={"Authorization": "Token " + key})
         except Exception:
             response = None
         if response is None:
@@ -769,3 +763,109 @@ class AbstractContainer(ABC):
         self["meta.json"]["orcid"] = (
             orcid[:4] + "-" + orcid[4:8] + "-" + orcid[8:12] + "-" + orcid[12:]
         )
+
+    def encode_zip(self):
+        """Encode container as ZIP package. Return package as binary
+        string.
+        """
+
+        # Check/format of author ORCID
+        self._norm_orcid()
+
+        items = {p: self._items[p].encode_zip() for p in self.items()}
+        with io.BytesIO() as f:
+            with ZipFile(
+                f,
+                "w",
+                compression=self.compression,
+                compresslevel=self.compresslevel,
+            ) as fp:
+                for path in sorted(items.keys()):
+                    fp.writestr(path, items[path])
+            f.seek(0)
+            data = f.read()
+        return data
+
+    def decode_zip(self, data: bytes, validate: bool = True, strict: bool = True):
+        """Take ZIP package as binary string. Read items from the
+        package and store them in this object.
+
+        Arguments:
+            data: Bytestring containing the ZIP DataContainer.
+            validate: If true, validate the content.
+            strict: If true, validate the hash, too.
+        """
+        with io.BytesIO() as f:
+            f.write(data)
+            f.seek(0)
+            with ZipFile(f, "r") as fp:
+                items = {p: fp.read(p) for p in fp.namelist()}
+        self._store(items, validate, strict)
+
+    def encode_hdf5(self):
+        """Encode container as hdf5 file. Return package as binary
+        string.
+        """
+
+        # Check/format of author ORCID
+        self._norm_orcid()
+
+        with h5File.in_memory() as fp:
+            for path in sorted(self.items()):
+                item = self._items[path]
+
+                basepath, name = os.path.split(path)
+                name = "_".join(name.rsplit(".", 1))
+
+                if basepath == "":
+                    group = fp
+                else:
+                    group = fp.require_group(os.path.split(path)[0])
+
+                item.encode_hdf5(group, name)
+
+            fp.flush()
+            hdf_data = fp.id.get_file_image()
+
+        return hdf_data
+
+    def decode_hdf5(self, data: bytes, validate: bool = True, strict: bool = True):
+        """Take hdf5 file as binary string. Read items from the
+        package and store them in this object.
+
+        Arguments:
+            data: Bytestring containing the hdf5 DataContainer.
+            validate: If true, validate the content.
+            strict: If true, validate the hash, too.
+        """
+        with h5File.in_memory(file_image=data) as fp:
+            items = {}
+
+            def find_items(name, obj):
+                if isinstance(obj, h5Dataset):
+                    key = ".".join(name.rsplit("_", 1))
+                    items[key] = obj
+
+            fp.visititems(find_items)
+
+            self._store(items, validate, strict)
+
+    def decode(self, data: bytes, validate: bool = True, strict: bool = True):
+        """Update container content from bytes.
+
+        Arguments:
+            data: Bytestring containing the DataContainer.
+            validate: If true, validate the content.
+            strict: If true, validate the hash, too.
+        """
+        self.fileformat = _detect_fileformat(data)
+        if self.fileformat == "hdf5":
+            self.decode_hdf5(data, validate, strict)
+        else:
+            self.decode_zip(data, validate, strict)
+
+    def encode(self) -> bytes:
+        """Encode container as file. Return package as binary string."""
+        if self.fileformat == "hdf5":
+            return self.encode_hdf5()
+        return self.encode_zip()
