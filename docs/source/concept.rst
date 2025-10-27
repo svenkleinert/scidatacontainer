@@ -3,7 +3,7 @@ Data Container Concept
 
 The basic concept of the data container is that it keeps the raw dataset, parameter data and meta data together. Parameter data is every data which scientists traditionally record in lab books like a description of the test setup, measurement settings, simulation parameters or evaluation parameters. The intention behind the container concept is to make datasets self-contained.
 
-Each data container is identified by a `UUID <https://en.wikipedia.org/wiki/Universally_unique_identifier>`_. The **Container** file is a `ZIP package file <https://en.wikipedia.org/wiki/ZIP_(file_format)>`_. The data in the container is stored in **Items** (files in ZIP package), which are organized in **Parts** (folders in ZIP package). The standard file extension of a container file is ``.zdc``.
+Each data container is identified by a `UUID <https://en.wikipedia.org/wiki/Universally_unique_identifier>`_. The **Container** file is a `ZIP package file <https://en.wikipedia.org/wiki/ZIP_(file_format)>`_ or an `HDF5 package file <https://en.wikipedia.org/wiki/Hierarchical_Data_Format>`_. The data in a ZIP container is stored in **Items** (files in ZIP package), which are organized in **Parts** (folders in ZIP package). The standard file extension of a ZIP container file is ``.zdc``. In an HDF5 container, the Items are stored as datasets and organized in groups. The standard file extension of an HDF5 container file is ``.h5dc``. 
 
 There are no restrictions regarding data formats inside the container, but items should be stored in the `JSON <https://en.wikipedia.org/wiki/JSON>`_ format, whenever possible. This makes the data readable for humans as well as machines. Furthermore, it allows to inspect, use and even create data container files with the tools provided by the operating system without any special software. We call the keys of JSON objects data **Attributes**.
 
@@ -33,8 +33,8 @@ The parameters describing the container itself are stored in the required root i
     + ``idType``: required type of identifier, if ``id`` is given
 - ``modelVersion``: required data model version
 
-Dataset Description
--------------------
+Container Description
+---------------------
 
 The meta data describing the data payload of the container is stored in the required root item ``meta.json``, which contains a single JSON object. The following set of attributes is currently defined for this item:
 
@@ -91,3 +91,14 @@ Our data model currently supports three variants of data containers, based on ce
 The **normal container** is generated and completed in a single step. This matches the typical workflow of generating data and saving all of it in one shot. However, if the data acquisition runs over a very long time like days or weeks, you may want to store also **incomplete containers**. In that case you can mark the container as containing incomplete data and update it as needed with increasing attribute ``storageTime``. Each server upload will replace the previous container. With your final upload you mark the container as being complete.
 
 **Static containers** are intended to carry static parameters in contrast to measurement or simulation data. An example would be a detailed description of a measurement setup, which is used for many measurements. Instead of including the large setup data with each individual measurement dataset, the whole setup may be stored as a single static dataset and referenced by its UUID as measurement parameter in subsequent containers. Static containers must contain a hash string. The data storage server refuses the upload of multiple containers with same ``containerType`` and ``hash``.
+
+.. _filetypes:
+
+Container File Formats
+----------------------
+
+The data model currently supports the usage of `ZIP files <https://en.wikipedia.org/wiki/ZIP_(file_format)>`_ and `HDF5 files <https://en.wikipedia.org/wiki/Hierarchical_Data_Format>`_ to store the content of a container. When an existing container is opened from disk or downloaded from a server, the filetype is automatically detected by inspecting the `magic number <https://en.wikipedia.org/wiki/Magic_number_(programming)#In_files>`_.
+
+**Zip containers** store items as files and parts are converted to folders in the zip file. The suffix ``.zdc`` is suggested for those files.
+
+**HDF5 containers** store items as datasets and parts are rendered as HDF5 groups. The suffix ``.h5dc`` is suggested for those files. Due to the limeted ability to store nested json structure in an HDF5 file, json files contain the whole content as a string. It is suggested to store the first level of json attributes as HDF5 attributes.
