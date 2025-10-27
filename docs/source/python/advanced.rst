@@ -41,25 +41,26 @@ However, both values can also be specified as method parameters::
 File Formats
 ------------
 
-The ``Container`` class can handle virtually any file format. However, in order to store and read a certain file format, it needs to know how to convert the respective Python object into a bytes stream and vice versa. File formats are identified by their file extension. The following file extensions are currently supported by the package ``scidatacontainer`` out of the box:
+The ``Container`` class can handle virtually any file format. However, in order to store and read a certain file format, it needs to know how to convert the respective Python object into a bytes stream (ZIP container) or dataset (HDF5 container) and vice versa. File formats are identified by their file extension. The following file extensions are currently supported by the package ``scidatacontainer`` out of the box:
 
 .. csv-table:: 
-	:header: Extension, File format, Python object, Required packages
 
+	:header: Extension, File format, Python object, Required packages
 	.json, JSON file (UTF-8 encoding), dictionary or others,
 	.txt, Text file (UTF-8 encoding), string,
 	.log, Text file (UTF-8 encoding), string,
 	.pgm, Text file (UTF-8 encoding), string,
-	.png, PNG image file,  NumPy array, "cv2, numpy"
-	.npy, NumPy array, NumPy array, numpy
+	.png, PNG image file,  NumPy array, cv2
+	.npy, NumPy array, NumPy array,
 	.bin, Raw binary data file, bytes,
+  .dataset, HDF5 dataset, NumPy array,
 
-Native support for image and NumPy objects is only available when your Python environment contains the packages `cv2 <https://pypi.org/project/opencv-python/>`_ and/or `numpy <https://pypi.org/project/numpy/>`_. The container class tries to guess the format of items with unknown extension. However, it is more reliable to use the function ``register()`` to add alternative file extensions to already known file formats. The following commands will register the extension ``.py`` as a text file:
+Native support for image objects is only available when your Python environment contains the `cv2 <https://pypi.org/project/opencv-python/>`_ package. The container class tries to guess the format of items with unknown extension. However, it is more reliable to use the function ``register()`` to add alternative file extensions to already known file formats. The following commands will register the extension ``.py`` as a text file:
 
 	>>> from scidatacontainer import register
 	>>> register("py", "txt")
 
-If you want to register another Python object, you need to provide a conversion class which can convert this object to and from a bytes string. This class should be inherited from the class ``AbstractFile``. The storage of NumPy arrays for example may be realized by the following code:
+If you want to register another Python object, you need to provide a conversion class which can convert this object to and from a bytes string. This class must inherit from the class ``AbstractFile``. A custom class to store NumPy arrays in ZIP and HDF5 containers may be realized by the following code:
 
 .. code-block:: python
   :linenos:
@@ -68,6 +69,8 @@ If you want to register another Python object, you need to provide a conversion 
   
   import numpy as np
   from scidatacontainer import AbstractFile, register
+  from h5py import Group as h5Group
+  from h5py import Dataset as h5Dataset
   
   
   class NpyFile(AbstractFile):
@@ -75,7 +78,7 @@ If you want to register another Python object, you need to provide a conversion 
   
       allow_pickle = False
   
-      def encode(self):
+      def encode_zip(self) -> bytes:
           """Convert NumPy array to bytes string."""
   
           with io.BytesIO() as fp:
@@ -84,7 +87,7 @@ If you want to register another Python object, you need to provide a conversion 
               data = fp.read()
           return data
   
-      def decode(self, data):
+      def decode_zip(self, data: bytes):
           """Decode NumPy array from bytes string."""
   
           with io.BytesIO() as fp:
@@ -92,8 +95,21 @@ If you want to register another Python object, you need to provide a conversion 
               fp.seek(0)
               self.data = np.load(fp, allow_pickle=self.allow_pickle)
   
-  
-  register("npy", NpyFile, np.ndarray)
+      def encode_hdf5(self, group: h5Group, name: str):
+          """Create an hdf5 dataset to represent a NumPy array."""
+          ds = group.create_dataset(name, data=self.data)
+          ds.attrs["description"] = "I can write some attributes, too."
+
+      def decode_hdf5(self, dataset: h5Dataset):
+          """Load numpy array from hdf5 dataset"""
+          self.data = dataset[:]
+          # I could also handle attributes here!
+
+      def hash(self) -> str:
+          return hashlib.sha256(self.data.data).hexdigest()
+
+
+  register("mynpy", NpyFile, np.ndarray)
 
 The third argument of the function ``register()`` sets this conversion class as default for NumPy array objects overriding any previous default class. This argument is optional.
 

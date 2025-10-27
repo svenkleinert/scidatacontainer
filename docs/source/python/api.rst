@@ -20,6 +20,8 @@ File type support
 
 .. autofunction:: register
 
+.. _python-builtin-converters:
+
 Built-in conversion classes
 ---------------------------
 
@@ -38,6 +40,10 @@ Built-in conversion classes
     :inherited-members:
 
 .. autoclass:: JsonFile
+    :show-inheritance:
+    :inherited-members:
+
+.. autoclass:: Dataset 
     :show-inheritance:
     :inherited-members:
 
