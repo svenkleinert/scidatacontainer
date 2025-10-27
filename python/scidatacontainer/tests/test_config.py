@@ -32,7 +32,7 @@ class ConfigTest(TestCase):
         self.check_cfg_empty()
         tmp_cfg = "./tmp_cfg"
 
-        with open(tmp_cfg, 'w') as f:
+        with open(tmp_cfg, "w") as f:
             f.write("# Test comment = should be skipped\n")
             f.write("author=Maxi Mustermann\n")
             f.write("email=maxi@example.com\n")
@@ -48,4 +48,31 @@ class ConfigTest(TestCase):
         self.assertEqual(cfg["server"], "http://example.com")
         self.assertEqual(cfg["key"], "SECRETKEY")
 
+        os.remove(tmp_cfg)
+
+    def test_cfg_kwargs(self):
+        self.check_cfg_empty()
+        tmp_cfg = "./tmp_cfg"
+
+        with open(tmp_cfg, "w") as f:
+            f.write("# Test comment = should be skipped\n")
+            f.write("author=Maxi Mustermann\n")
+            f.write("email=maxi@example.com\n")
+            f.write("server=http://example.com\n")
+            f.write("key=\n")
+            f.write("key=SECRETKEY\n")
+            f.write("key invalid line and should be ignored\n")
+
+        cfg = load_config(
+            tmp_cfg,
+            author="Max Musterfrau",
+            email="max@example.de",
+            server="http://example.de",
+            key="EVENMORESECRETKEY",
+        )
+
+        self.assertEqual(cfg["author"], "Max Musterfrau")
+        self.assertEqual(cfg["email"], "max@example.de")
+        self.assertEqual(cfg["server"], "http://example.de")
+        self.assertEqual(cfg["key"], "EVENMORESECRETKEY")
         os.remove(tmp_cfg)

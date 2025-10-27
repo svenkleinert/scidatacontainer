@@ -3,32 +3,17 @@ import os
 import uuid
 
 from scidatacontainer import Container
-from scidatacontainer.tests import get_test_container
 
-from ._abstract_container_test import AbstractContainerTest
+from .test_single_step_container import AbstractSingleStepContainerTest
 
 
-class AbstractSingleStepContainerTest(AbstractContainerTest):
-    def _compare_with_items(self, dc):
-        super()._compare_with_items(dc)
-        self.assertFalse(dc["content.json"]["static"])
-        self._check_timestamp(dc["content.json"]["created"])
-        self._check_timestamp(dc["content.json"]["storageTime"])
-        self.assertTrue(dc["content.json"]["complete"])
-
-    def _compare_with_minimal_items(self, dc):
-        super()._compare_with_minimal_items(dc)
-        self.assertFalse(dc["content.json"]["static"])
-        self._check_timestamp(dc["content.json"]["created"])
-        self._check_timestamp(dc["content.json"]["storageTime"])
-        self.assertTrue(dc["content.json"]["complete"])
-
+class Hdf5SingleStepTest(AbstractSingleStepContainerTest):
     def test_container_creation(self):
         items = self.items
         with self.assertRaisesRegex(RuntimeError, "No data!"):
-            dc = Container()
+            dc = Container(filetype="hdf5")
 
-        dc = Container(items=items)
+        dc = Container(items=items, filetype="hdf5")
 
         self._compare_with_items(dc)
 
@@ -38,11 +23,9 @@ class AbstractSingleStepContainerTest(AbstractContainerTest):
 
         self.dc = dc
 
-
-class TestSingleStepContainer(AbstractSingleStepContainerTest):
     def test_container_creation_minimal(self):
         items = self.items_minimal
-        dc = Container(items=items)
+        dc = Container(items=items, filetype="hdf5")
 
         self._compare_with_minimal_items(dc)
 
@@ -56,7 +39,7 @@ class TestSingleStepContainer(AbstractSingleStepContainerTest):
 
     def test_read(self):
         self.test_write(clean=False)
-        dc = Container(file=self.export_filename)
+        dc = Container(file=self.export_filename, filetype="hdf5")
 
         self._compare_with_items(dc)
 
@@ -72,7 +55,7 @@ class TestSingleStepContainer(AbstractSingleStepContainerTest):
         items = copy.deepcopy(self.items)
         del items["content.json"]
         with self.assertRaisesRegex(RuntimeError, "Item 'content.json' is missing!"):
-            Container(items=items)
+            Container(items=items, filetype="hdf5")
 
         items = copy.deepcopy(self.items)
         del items["content.json"]["containerType"]
@@ -80,7 +63,7 @@ class TestSingleStepContainer(AbstractSingleStepContainerTest):
         with self.assertRaisesRegex(
             RuntimeError, "Attribute 'containerType' is missing!"
         ):
-            Container(items=items)
+            Container(items=items, filetype="hdf5")
 
         items = copy.deepcopy(self.items)
         items["content.json"]["containerType"] = ["name", "test"]
@@ -88,36 +71,36 @@ class TestSingleStepContainer(AbstractSingleStepContainerTest):
         with self.assertRaisesRegex(
             RuntimeError, "Attribute containerType is no " + "dictionary!"
         ):
-            Container(items=items)
+            Container(items=items, filetype="hdf5")
 
         items = copy.deepcopy(self.items)
         del items["content.json"]["containerType"]["name"]
         with self.assertRaisesRegex(RuntimeError, "Name of containerType is missing!"):
-            Container(items=items)
+            Container(items=items, filetype="hdf5")
 
         items = copy.deepcopy(self.items)
         del items["content.json"]["containerType"]["version"]
         with self.assertRaisesRegex(
             RuntimeError, "Version of containerType is missing!"
         ):
-            Container(items=items)
+            Container(items=items, filetype="hdf5")
 
         items = copy.deepcopy(self.items)
         del items["content.json"]["usedSoftware"][0]["name"]
         with self.assertRaisesRegex(RuntimeError, "Software name is missing!"):
-            Container(items=items)
+            Container(items=items, filetype="hdf5")
 
         items = copy.deepcopy(self.items)
         del items["content.json"]["usedSoftware"][0]["version"]
         with self.assertRaisesRegex(RuntimeError, "Software version is missing!"):
-            Container(items=items)
+            Container(items=items, filetype="hdf5")
 
         items = copy.deepcopy(self.items)
         del items["content.json"]["usedSoftware"][1]["idType"]
         with self.assertRaisesRegex(
             RuntimeError, "Type of software reference id is " + "missing!"
         ):
-            Container(items=items)
+            Container(items=items, filetype="hdf5")
 
     def test_meta_validation(self):
         items = copy.deepcopy(self.items)
@@ -128,7 +111,7 @@ class TestSingleStepContainer(AbstractSingleStepContainerTest):
         items = copy.deepcopy(self.items)
         del items["meta.json"]["title"]
         with self.assertRaisesRegex(RuntimeError, "Data title is missing!"):
-            Container(items=items)
+            Container(items=items, filetype="hdf5")
 
     def test_mutability(self):
         self.test_container_creation()
@@ -244,47 +227,3 @@ class TestSingleStepContainer(AbstractSingleStepContainerTest):
         self.test_container_creation()
         with self.assertRaises(AttributeError):
             self.dc.uuid = str(uuid.uuid4())
-
-    def test_fileformat_detection(self):
-        open("test.zip", "w").write("test123")
-        open("test.h5dc", "w").write("test123")
-
-        with self.assertRaisesRegex(RuntimeError, r"Unknown file format\."):
-            Container(file="test.zip")
-
-        with self.assertRaisesRegex(RuntimeError, r"Unknown file format\."):
-            Container(file="test.h5dc")
-
-        a = get_test_container(fileformat="zip")
-        a.write("test.h5dc")
-        b = Container(file="test.h5dc")
-        self.assertEqual(b.fileformat, "zip")
-
-        a = get_test_container(fileformat="hdf5")
-        a.write("test.zip")
-        b = Container(file="test.zip")
-        self.assertEqual(b.fileformat, "hdf5")
-
-        os.remove("test.h5dc")
-        os.remove("test.zip")
-
-    def test_fileformat_warning(self):
-        a = get_test_container(fileformat="zip")
-        a.write("test.zip")
-        with self.assertWarnsRegex(
-            RuntimeWarning,
-            r"A file format was provided but the loaded/downloaded file has a different format! \(hdf5 != zip\)",
-        ):
-            b = Container(file="test.zip", fileformat="hdf5")
-        self.assertEqual(b.fileformat, "zip")
-
-        a = get_test_container(fileformat="hdf5")
-        a.write("test.h5dc")
-        with self.assertWarnsRegex(
-            RuntimeWarning,
-            r"A file format was provided but the loaded/downloaded file has a different format! \(zip != hdf5\)",
-        ):
-            b = Container(file="test.h5dc", fileformat="zip")
-        self.assertEqual(b.fileformat, "hdf5")
-        os.remove("test.h5dc")
-        os.remove("test.zip")
