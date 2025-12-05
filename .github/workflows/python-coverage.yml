@@ -1,36 +1,36 @@
 name: Codecov
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
 jobs:
   run:
     runs-on: ubuntu-latest
     env:
       OS: ubuntu-latest
-      PYTHON: '3.13'
+      PYTHON: '3.14'
     steps:
-    - uses: actions/checkout@master
-    - name: Setup Python
-      uses: actions/setup-python@master
-      with:
-        python-version: "3.13"
-    - name: Generate coverage report
-      run: |
-        pip install pytest
-        pip install pytest-cov
-        if [ -f python/requirements.txt ]; then pip install -r python/requirements.txt; fi
-        if [ -f python/test_requirements.txt ]; then pip install -r python/test_requirements.txt; fi
-        pytest --cov=./python/scidatacontainer --cov-report=xml
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v5
-      with:
-        directory: ./coverage/reports/
-        env_vars: OS,PYTHON
-        files: ./coverage.xml
-        fail_ci_if_error: true
-        flags: unittests
-        name: codecov-umbrella
-        verbose: true
-        token: ${{ secrets.CODECOV_TOKEN }}
+      - uses: actions/checkout@master
+      - name: Setup Python
+        uses: actions/setup-python@master
+        with:
+          python-version: "3.13"
+      - name: Generate coverage report
+        run: |
+          pip install pytest
+          pip install pytest-cov
+          if [ -f python/requirements.txt ]; then pip install -r python/requirements.txt; fi
+          if [ -f python/test_requirements.txt ]; then pip install -r python/test_requirements.txt; fi
+          pytest --cov=./python/scidatacontainer --cov-report=xml
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          directory: ./coverage/reports/
+          env_vars: OS,PYTHON
+          files: ./coverage.xml
+          fail_ci_if_error: true
+          flags: unittests
+          name: codecov-umbrella
+          verbose: true
+          token: ${{ secrets.CODECOV_TOKEN }}
