@@ -22,10 +22,12 @@ Name and location of the configuration file is ``%USERPROFILE%\scidata.cfg`` on 
 The following parameters are supported:
 
 .. csv-table:: 
-    :header: Environment variable, Configuration key, Content
+  :header: Environment variable, Configuration key, Content
 
-    ``DC_AUTHOR``, ``author``, author of the dataset
+  ``DC_AUTHOR``, ``author``, name of the dataset's author
 	``DC_EMAIL``, ``email``, e-mail address of the author
+  ``DC_ORCID``, ``orcid``, orcid of the author
+  ``DC_ORGANIZATION``, ``organization``, affiliation of the author
 	``DC_SERVER``, ``server``, name or address of the data storage server
 	``DC_KEY``, ``key``, key for the storage server API
 
