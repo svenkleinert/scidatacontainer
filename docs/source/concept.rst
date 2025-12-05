@@ -18,19 +18,23 @@ The parameters describing the container itself are stored in the required root i
 - ``uuid``: required UUID
 - ``replaces``: optional UUID of the predecessor of this dataset
 - ``containerType``: required container type object
+
     + ``name``: required container name (`camel case <https://en.wikipedia.org/wiki/Camel_case>`_ format)
     + ``id``: optional identifier for standardized containers
     + ``version``: required standard version, if ``id`` is given
+
 - ``created``: required creation timestamp (see `format <#timestamp>`_)
 - ``storageTime``: required timestamp of storage or freeze (see `format <#timestamp>`_)
 - ``static``: required boolean flag (see `container variants <#variants>`_)
 - ``complete``: required boolean flag (see `container variants <#variants>`_)
 - ``hash``: optional hex digest of SHA256 hash, required for `static containers <#variants>`_
 - ``usedSoftware``: optional list of software objects
-    + ``name``: required software name
-    + ``version``: required software version
-    + ``id``: optional software identifier (e.g. UUID or URL)
-    + ``idType``: required type of identifier, if ``id`` is given
+
+    - ``name``: required software name
+    - ``version``: required software version
+    - ``id``: optional software identifier (e.g. UUID or URL)
+    - ``idType``: required type of identifier, if ``id`` is given
+
 - ``modelVersion``: required data model version
 
 Dataset Description
@@ -49,6 +53,12 @@ The meta data describing the data payload of the container is stored in the requ
 - ``timestamp``: optional creation timestamp of the dataset (see `format <#timestamp>`_)
 - ``doi``: optional digital object identifier of the dataset
 - ``license``: optional data license name (e.g. `"MIT" <https://en.wikipedia.org/wiki/MIT_License>`_ or `"CC-BY" <https://creativecommons.org/licenses/by/4.0/>`_)
+- ``authors``:  optional list of author information objects to represent multiple authors of a dataset
+
+    - ``name``: required author name
+    - ``email``: optional e-mail address of the author
+    - ``orcid``: optional ORCID of the author
+    - ``organization``: optional affiliation of the author
 
 .. _timestamp:
 
@@ -82,9 +92,9 @@ Container Variants
 Our data model currently supports three variants of data containers, based on certain use cases. The distinction is mainly relevant for data storage and therefore of particular interest when you upload the container to a storage server. The respective variant is selected using the boolean attributes ``static`` and ``complete`` of the item ``content.json``:
 
 .. csv-table:: 
-    :header: ``static``, ``complete``, Container variant
+  :header: ``static``, ``complete``, Container variant
 
-    true, true, static container
+  true, true, static container
 	true, false, (not allowed)
 	false, true, normal completed container
 	false, false, incomplete container

@@ -38,7 +38,7 @@ from .container import MODELVERSION as modelVersion
 from .container import AbstractContainer, timestamp
 from .filebase import AbstractFile
 
-__version__ = "1.1.6"
+__version__ = "1.1.7"
 
 suffixes = {}
 classes = {}
@@ -63,16 +63,12 @@ def register(
 
     if isinstance(fclass, str):
         if pclass is not None:
-            raise RuntimeError(
-                "Alias %s:%s with default class!" % (suffix, fclass)
-            )
+            raise RuntimeError("Alias %s:%s with default class!" % (suffix, fclass))
         fclass = suffixes[fclass]
 
     # Simple sanity check for the class interface
     for method in ("encode", "decode", "hash"):
-        if not hasattr(fclass, method) or not callable(
-            getattr(fclass, method)
-        ):
+        if not hasattr(fclass, method) or not callable(getattr(fclass, method)):
             raise RuntimeError(
                 "No method %s() in class for suffix '%s'!" % (method, suffix)
             )
@@ -92,7 +88,7 @@ def register(
 
 # Initialize the conversion class database
 
-for name in ("filebase", "fileimage", "filenumpy"):
+for name in ("filebase", "fileimage", "filenumpy", "filehdf5"):
     fullname = __name__ + "." + name
     try:
         module = import_module(fullname)
