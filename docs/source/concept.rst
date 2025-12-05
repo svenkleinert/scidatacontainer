@@ -40,6 +40,7 @@ The meta data describing the data payload of the container is stored in the requ
 
 - ``author``: required name of the author
 - ``email``: required e-mail address of the author
+- ``orcid``: optional ORCID of the author
 - ``organization``: optional affiliation of the author
 - ``comment``: optional comments on the dataset
 - ``title``: required title of the dataset
