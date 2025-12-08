@@ -84,7 +84,7 @@ def load_config(config_path: str = None, **kwargs) -> dict:
 
     # Get default values from config file
     if os.path.exists(config_path):
-        with open(config_path, "r") as fp:
+        with open(config_path, "r", encoding="utf8") as fp:
             for line in fp.readlines():
                 line = line.strip()
                 if line[:1] == "#":
