@@ -52,6 +52,7 @@ The ``Container`` class can handle virtually any file format. However, in order 
 	.pgm, Text file (UTF-8 encoding), string,
 	.png, PNG image file,  NumPy array, "cv2, numpy"
 	.npy, NumPy array, NumPy array, numpy
+	.hdf5, HDF5 container, NumPy array/dict of NumPy arrays, "h5py, numpy"
 	.bin, Raw binary data file, bytes,
 
 Native support for image and NumPy objects is only available when your Python environment contains the packages `cv2 <https://pypi.org/project/opencv-python/>`_ and/or `numpy <https://pypi.org/project/numpy/>`_. The container class tries to guess the format of items with unknown extension. However, it is more reliable to use the function ``register()`` to add alternative file extensions to already known file formats. The following commands will register the extension ``.py`` as a text file:
