@@ -20,7 +20,7 @@ class Hdf5File(AbstractFile):
                 elif isinstance(self.data, dict):
                     for key, value in self.data.items():
                         assert key != "dataset"
-                        if isinstance(value, np.ndarray):
+                        if isinstance(value, (np.ndarray, h5py.Dataset)):
                             _ = h5file.create_dataset(
                                 key, data=value, compression="gzip", compression_opts=9
                             )

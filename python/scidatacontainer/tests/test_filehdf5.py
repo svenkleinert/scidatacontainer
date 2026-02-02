@@ -1,4 +1,3 @@
-import os
 from io import BytesIO
 from unittest import TestCase
 from zipfile import ZipFile
@@ -16,9 +15,14 @@ class FileHdf5Test(TestCase):
         a = get_test_container()
 
         data = np.random.randint(0, 256, (100, 100, 3))
+
+        f = h5py.File.in_memory()
+        dset = f.create_dataset("hdf5_dataset", data=data)
+
         moredata = {
             "data1": np.random.randint(0, 256, (100, 100, 3)),
             "data2": np.random.randint(0, 256, (100, 100, 3)),
+            "data3": dset,
             "attr1": "test123",
             "attr2": 123,
             "attr3": 1.23,
@@ -31,11 +35,12 @@ class FileHdf5Test(TestCase):
 
         b = Container(file="test.zdc")
         self.assertTrue(np.allclose(a["data/test.hdf5"], b["data/test.hdf5"]))
-        self.assertTrue(np.allclose(moredata["data1"], a["data/test2.hdf5"]["data1"]))
-        self.assertTrue(np.allclose(moredata["data2"], a["data/test2.hdf5"]["data2"]))
-        self.assertEqual(moredata["attr1"], a["data/test2.hdf5"]["attr1"])
-        self.assertEqual(moredata["attr2"], a["data/test2.hdf5"]["attr2"])
-        self.assertEqual(moredata["attr3"], a["data/test2.hdf5"]["attr3"])
+        self.assertTrue(np.allclose(moredata["data1"], b["data/test2.hdf5"]["data1"]))
+        self.assertTrue(np.allclose(moredata["data2"], b["data/test2.hdf5"]["data2"]))
+        self.assertTrue(np.allclose(data, b["data/test2.hdf5"]["data3"]))
+        self.assertEqual(moredata["attr1"], b["data/test2.hdf5"]["attr1"])
+        self.assertEqual(moredata["attr2"], b["data/test2.hdf5"]["attr2"])
+        self.assertEqual(moredata["attr3"], b["data/test2.hdf5"]["attr3"])
 
         a.release()
         a["data/test3.hdf5"] = [data]
