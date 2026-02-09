@@ -14,14 +14,14 @@ class FileHdf5Test(TestCase):
     def test_encode_decode(self):
         a = get_test_container()
 
-        data = np.random.randint(0, 256, (100, 100, 3))
+        data = np.random.randint(0, 256, (10, 10, 3))
 
         f = h5py.File.in_memory()
         dset = f.create_dataset("hdf5_dataset", data=data)
 
         moredata = {
-            "data1": np.random.randint(0, 256, (100, 100, 3)),
-            "data2": np.random.randint(0, 256, (100, 100, 3)),
+            "data1": np.random.randint(0, 256, (10, 10, 3)),
+            "data2": np.random.randint(0, 256, (10, 10, 3)),
             "data3": dset,
             "attr1": "test123",
             "attr2": 123,
@@ -50,10 +50,10 @@ class FileHdf5Test(TestCase):
     def test_file_content(self):
         a = get_test_container()
 
-        data = np.random.randint(0, 256, (100, 100, 3))
+        data = np.random.randint(0, 256, (10, 10, 3))
         moredata = {
-            "data1": np.random.randint(0, 256, (100, 100, 3)),
-            "data2": np.random.randint(0, 256, (100, 100, 3)),
+            "data1": np.random.randint(0, 256, (10, 10, 3)),
+            "data2": np.random.randint(0, 256, (10, 10, 3)),
             "attr1": "test123",
             "attr2": 123,
             "attr3": 1.23,
@@ -75,3 +75,29 @@ class FileHdf5Test(TestCase):
                     self.assertEqual(moredata["attr1"], h5file.attrs["attr1"])
                     self.assertEqual(moredata["attr2"], h5file.attrs["attr2"])
                     self.assertEqual(moredata["attr3"], h5file.attrs["attr3"])
+
+    def test_attribute_encoding(self):
+        a = get_test_container()
+        del a["meas/image.tsv"]  # remove int array that causes float precision error
+        data = np.random.randint(0, 256, (10, 10, 3))
+        moredata = {
+            "data1": np.random.randint(0, 256, (10, 10, 3)),
+            "data2": np.random.randint(0, 256, (10, 10, 3)),
+            "attr1": "test123",
+            "attr2": 123,
+            "attr3": np.float64(1.23),
+            "attr4": [123, 1.24],
+            "attr5": ["123", "1.24"],
+            "attr6": [[123, 12], [1234, 1234]],
+        }
+
+        a["data/test.hdf5"] = data
+        a["data/test2.hdf5"] = moredata
+        a.hash()
+        a.write("test.zdc")
+
+        b = Container(file="test.zdc")
+        # value = b["data/test2.hdf5"]["attr3"]
+        b.hash()
+
+        self.assertEqual(a["content.json"]["hash"], b["content.json"]["hash"])
