@@ -28,3 +28,14 @@ class FilePathTest(TestCase):
 
         b = Container(file="test.zdc")
         self.assertEqual(b["data/test.exe"].decode("utf-8"), text)
+
+    def test_invalid_file_path(self):
+        a = get_test_container()
+
+        a["data/test.exe"] = Path("/this/path/doesnt/exist")
+
+        with self.assertRaisesRegex(
+            FileNotFoundError,
+            r"\[Errno 2\] No such file or directory: '/this/path/doesnt/exist'",
+        ):
+            a.write("test.zdc")

@@ -75,4 +75,4 @@ class FileIOObjectTest(TestCase):
             RuntimeError,
             r"Partial loading of files only supported for immutable files!",
         ):
-            b = Container(file="test.zdc", ignore_files=["data/test.exe"])
+            Container(file="test.zdc", ignore_files=["data/test.exe"])
