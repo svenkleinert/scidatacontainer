@@ -532,8 +532,10 @@ class AbstractContainer(ABC):
             p: self._items[p] for p in self.items() if isinstance(self[p], pathlib.Path)
         }
 
+        # create FiFo queue with limited size
         queue = _StreamingQueue()
 
+        # function to generate zip content in a seperate thread
         def _zip_generator():
             try:
                 with ZipFile(
@@ -556,9 +558,11 @@ class AbstractContainer(ABC):
             finally:
                 queue.close()
 
+        # start thread to fill the queue
         thread = Thread(target=_zip_generator, daemon=True)
         thread.start()
 
+        # yield next chunk if available
         while True:
             chunk = queue.get()
             if chunk is None:
