@@ -523,7 +523,7 @@ class AbstractContainer(ABC):
         self._norm_orcid()
 
         in_memory_items = {
-            p: self._items[p].encode()
+            p: self._items[p]
             for p in self.items()
             if not isinstance(self[p], pathlib.Path)
         }
@@ -543,7 +543,7 @@ class AbstractContainer(ABC):
                     compresslevel=self.compresslevel,
                 ) as zfp:
                     for path in sorted(in_memory_items.keys()):
-                        zfp.writestr(path, in_memory_items[path])
+                        zfp.writestr(path, in_memory_items[path].encode())
 
                     for path in sorted(in_filesystem_items.keys()):
                         zfp.write(
