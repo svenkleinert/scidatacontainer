@@ -8,7 +8,6 @@ from ._abstract_container_test import AbstractContainerTest
 
 
 class AbstractSingleStepContainerTest(AbstractContainerTest):
-
     def _compare_with_items(self, dc):
         super()._compare_with_items(dc)
         self.assertFalse(dc["content.json"]["static"])
@@ -54,6 +53,23 @@ class TestSingleStepContainer(AbstractSingleStepContainerTest):
         if clean:
             os.remove(self.export_filename)
 
+    def test_write_bytes(self, clean=True):
+        self.test_container_creation()
+        self.dc.write(self.export_filename, b"".join(self.dc.encode()))
+        dc = Container(file=self.export_filename)
+
+        self._compare_with_items(dc)
+
+        self.assertIsNotNone(dc["content.json"]["hash"])
+        old_hash = dc["content.json"]["hash"]
+
+        dc.hash()
+        self.assertIsNotNone(dc["content.json"]["hash"])
+        # new hash is equal with the old one
+        self.assertEqual(old_hash, dc["content.json"]["hash"])
+        if clean:
+            os.remove(self.export_filename)
+
     def test_read(self):
         self.test_write(clean=False)
         dc = Container(file=self.export_filename)
@@ -71,61 +87,58 @@ class TestSingleStepContainer(AbstractSingleStepContainerTest):
     def test_content_validation(self):
         items = copy.deepcopy(self.items)
         del items["content.json"]
-        with self.assertRaisesRegex(RuntimeError,
-                                    "Item 'content.json' is missing!"):
+        with self.assertRaisesRegex(RuntimeError, "Item 'content.json' is missing!"):
             Container(items=items)
 
         items = copy.deepcopy(self.items)
         del items["content.json"]["containerType"]
 
-        with self.assertRaisesRegex(RuntimeError,
-                                    "Attribute 'containerType' is missing!"):
+        with self.assertRaisesRegex(
+            RuntimeError, "Attribute 'containerType' is missing!"
+        ):
             Container(items=items)
 
         items = copy.deepcopy(self.items)
         items["content.json"]["containerType"] = ["name", "test"]
 
-        with self.assertRaisesRegex(RuntimeError,
-                                    "Attribute containerType is no " +
-                                    "dictionary!"):
+        with self.assertRaisesRegex(
+            RuntimeError, "Attribute containerType is no " + "dictionary!"
+        ):
             Container(items=items)
 
         items = copy.deepcopy(self.items)
         del items["content.json"]["containerType"]["name"]
-        with self.assertRaisesRegex(RuntimeError,
-                                    "Name of containerType is missing!"):
+        with self.assertRaisesRegex(RuntimeError, "Name of containerType is missing!"):
             Container(items=items)
 
         items = copy.deepcopy(self.items)
         del items["content.json"]["containerType"]["version"]
-        with self.assertRaisesRegex(RuntimeError,
-                                    "Version of containerType is missing!"):
+        with self.assertRaisesRegex(
+            RuntimeError, "Version of containerType is missing!"
+        ):
             Container(items=items)
 
         items = copy.deepcopy(self.items)
         del items["content.json"]["usedSoftware"][0]["name"]
-        with self.assertRaisesRegex(RuntimeError,
-                                    "Software name is missing!"):
+        with self.assertRaisesRegex(RuntimeError, "Software name is missing!"):
             Container(items=items)
 
         items = copy.deepcopy(self.items)
         del items["content.json"]["usedSoftware"][0]["version"]
-        with self.assertRaisesRegex(RuntimeError,
-                                    "Software version is missing!"):
+        with self.assertRaisesRegex(RuntimeError, "Software version is missing!"):
             Container(items=items)
 
         items = copy.deepcopy(self.items)
         del items["content.json"]["usedSoftware"][1]["idType"]
-        with self.assertRaisesRegex(RuntimeError,
-                                    "Type of software reference id is " +
-                                    "missing!"):
+        with self.assertRaisesRegex(
+            RuntimeError, "Type of software reference id is " + "missing!"
+        ):
             Container(items=items)
 
     def test_meta_validation(self):
         items = copy.deepcopy(self.items)
         del items["meta.json"]
-        with self.assertRaisesRegex(RuntimeError,
-                                    "Item 'meta.json' is missing!"):
+        with self.assertRaisesRegex(RuntimeError, "Item 'meta.json' is missing!"):
             Container(items=items)
 
         items = copy.deepcopy(self.items)
@@ -147,13 +160,14 @@ class TestSingleStepContainer(AbstractSingleStepContainerTest):
 
         self.assertIn("Complete Container", s)
         ct = self.items["content.json"]["containerType"]
-        self.assertIn("type:        " + ct["name"] + " " + ct["version"]
-                      + " (" + ct["id"] + ")", s)
+        self.assertIn(
+            "type:        " + ct["name"] + " " + ct["version"] + " (" + ct["id"] + ")",
+            s,
+        )
         self.assertIn("uuid:        " + self.dc["content.json"]["uuid"], s)
         self.assertIn("replaces:    " + self.dc["content.json"]["replaces"], s)
         self.assertIn("created:     " + self.dc["content.json"]["created"], s)
-        self.assertIn("storageTime: " + self.dc["content.json"]["storageTime"],
-                      s)
+        self.assertIn("storageTime: " + self.dc["content.json"]["storageTime"], s)
         self.assertIn("author:      " + self.dc["meta.json"]["author"], s)
 
     def test_setitem(self):
@@ -167,9 +181,10 @@ class TestSingleStepContainer(AbstractSingleStepContainerTest):
         self.dc["data/test.bin"] = b"Test123"
         self.dc["data/test.abc"] = b"Test123"
 
-        with self.assertRaisesRegex(RuntimeError,
-                                    "No matching file format found for item " +
-                                    "'data/test.list'!"):
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "No matching file format found for item " + "'data/test.list'!",
+        ):
             self.dc["data/test.list"] = ["Test123", "Test456"]
 
     def test_delitem(self):
@@ -189,10 +204,10 @@ class TestSingleStepContainer(AbstractSingleStepContainerTest):
 
     def test_values(self):
         self.test_container_creation()
-        self.assertEqual(self.dc.values(), [self.dc["content.json"],
-                                            self.parameter,
-                                            self.data,
-                                            self.dc["meta.json"]])
+        self.assertEqual(
+            self.dc.values(),
+            [self.dc["content.json"], self.parameter, self.data, self.dc["meta.json"]],
+        )
 
     def test_content_getter(self):
         self.test_container_creation()
@@ -214,12 +229,14 @@ class TestSingleStepContainer(AbstractSingleStepContainerTest):
     def test_meta_getter(self):
         self.test_container_creation()
         self.assertDictEqual(self.dc.meta, self.dc["meta.json"])
-        self.assertEqual(self.dc["meta.json"]["title"],
-                         "This is a sample image dataset")
+        self.assertEqual(
+            self.dc["meta.json"]["title"], "This is a sample image dataset"
+        )
 
         self.dc.meta["title"] = "This is NOT a sample image dataset"
-        self.assertEqual(self.dc["meta.json"]["title"],
-                         "This is NOT a sample image dataset")
+        self.assertEqual(
+            self.dc["meta.json"]["title"], "This is NOT a sample image dataset"
+        )
         self.assertDictEqual(self.dc.meta, self.dc["meta.json"])
 
     def test_meta_setter(self):
