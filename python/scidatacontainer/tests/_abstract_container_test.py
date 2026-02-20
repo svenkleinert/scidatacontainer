@@ -93,7 +93,7 @@ class AbstractContainerTest(ABC, TestCase):
         }
         cls.export_filename = "test.zdc"
 
-    def _compare_with_items(self, dc):
+    def _compare_with_items(self, dc, check_model_version=True):
         items = self.items
         self.assertEqual(dc["content.json"]["uuid"], items["content.json"]["uuid"])
 
@@ -107,9 +107,10 @@ class AbstractContainerTest(ABC, TestCase):
             items["content.json"]["usedSoftware"], dc["content.json"]["usedSoftware"]
         )
 
-        self.assertEqual(
-            dc["content.json"]["modelVersion"], scidatacontainer.modelVersion
-        )
+        if check_model_version:
+            self.assertEqual(
+                dc["content.json"]["modelVersion"], scidatacontainer.modelVersion
+            )
 
         self.assertEqual(items["meta.json"]["author"], dc["meta.json"]["author"])
 

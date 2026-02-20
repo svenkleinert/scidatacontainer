@@ -15,8 +15,8 @@ class TestStaticContainer(AbstractContainerTest):
         cls.items["content.json"]["static"] = True
         cls.items_minimal["content.json"]["static"] = True
 
-    def _compare_with_items(self, dc):
-        super()._compare_with_items(dc)
+    def _compare_with_items(self, dc, check_model_version=True):
+        super()._compare_with_items(dc, check_model_version)
         self._check_timestamp(dc["content.json"]["created"])
 
         self._check_timestamp(dc["content.json"]["storageTime"])
@@ -73,10 +73,32 @@ class TestStaticContainer(AbstractContainerTest):
         self.assertIsNotNone(dc["content.json"]["hash"])
         self.assertEqual(
             dc["content.json"]["hash"],
-            "7a836281f4631bc6d17f41bf3b03dd1de4fd7fbcec08ea588c19752ab3668905",
+            "e1260e851a77e4b2d56aab0c33037a98fbdb4684b94461a9ace914bd07220dc4",
         )
 
         self.dc = dc
+
+    def test_legacy_freeze(self):
+        items = copy.deepcopy(self.items)
+        items["content.json"]["static"] = False
+        dc = Container(items=items)
+        dc["content.json"]["modelVersion"] = "1.0.0"
+
+        super()._compare_with_items(dc, check_model_version=False)
+        self.assertIsNone(dc["content.json"]["hash"])
+        self.assertFalse(dc["content.json"]["static"])
+
+        dc.freeze()
+
+        self._compare_with_items(dc, check_model_version=False)
+        self.assertTrue(dc["content.json"]["static"])
+        self.assertIsNotNone(dc["content.json"]["hash"])
+        self.assertEqual(
+            dc["content.json"]["hash"],
+            "7a836281f4631bc6d17f41bf3b03dd1de4fd7fbcec08ea588c19752ab3668905",
+        )
+
+        self.items["content.json"]["modelVersion"] = "1.0.1"
 
     def test_freeze_minimal(self):
         items = copy.deepcopy(self.items_minimal)
@@ -95,12 +117,11 @@ class TestStaticContainer(AbstractContainerTest):
         self.assertIsNotNone(dc["content.json"]["hash"])
         self.assertEqual(
             dc["content.json"]["hash"],
-            "78cb6994e23639ffc9c47571e8213650adf42185b19dd98778d1dc5cca227cfb",
+            "10908bd58e451ef5c8ad1e575128fb3444e81675c434ccaf85d60d2ec8202e65",
         )
 
         self.dc = dc
 
-    @unittest.expectedFailure
     def test_hash_collision(self):
         self.test_freeze()
 

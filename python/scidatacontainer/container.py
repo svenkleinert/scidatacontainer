@@ -32,7 +32,7 @@ from .config import load_config
 from .filebase import BinaryFile, JsonFile, TextFile
 
 # Version of the implemented data model
-MODELVERSION = "1.0.0"
+MODELVERSION = "1.0.1"
 
 
 ##########################################################################
@@ -457,16 +457,7 @@ class AbstractContainer(ABC):
         """
         return {k: self[k] for k in self.keys()}
 
-    def hash(self):
-        """Calculate and save the hash value of this container."""
-        # Some attributes of content.json are excluded from the hash
-        # calculation
-        save = ("uuid", "created", "storageTime")
-        save = {k: self["content.json"][k] for k in save}
-        for key in save:
-            self["content.json"][key] = None
-        self["content.json"]["hash"] = None
-
+    def _legacy_hash(self) -> str:
         # Calculate and store hash of this container
         hashes = []
         for p in sorted(self.items()):
@@ -481,8 +472,31 @@ class AbstractContainer(ABC):
             else:
                 hashes.append(self._items[p].hash())
 
-        myhash = hashlib.sha256(" ".join(hashes).encode("ascii")).hexdigest()
-        self["content.json"]["hash"] = myhash
+        return hashlib.sha256(" ".join(hashes).encode("ascii")).hexdigest()
+
+    def hash(self):
+        """Calculate and save the hash value of this container."""
+        # Some attributes of content.json are excluded from the hash
+        # calculation
+        save = ("uuid", "created", "storageTime")
+        save = {k: self["content.json"][k] for k in save}
+        for key in save:
+            self["content.json"][key] = None
+        self["content.json"]["hash"] = None
+
+        if self["content.json"]["modelVersion"] < "1.0.1":
+            self["content.json"]["hash"] = self._legacy_hash()
+        else:
+            h = hashlib.sha256()
+            for p in sorted(self.items()):
+                h.update(p.encode("utf8"))
+                if isinstance(self._items[p], pathlib.Path):
+                    with open(self._items[p], "rb") as fp:
+                        while chunk := fp.read(65536):
+                            h.update(chunk)
+                else:
+                    h.update(self._items[p].encode())
+            self["content.json"]["hash"] = h.hexdigest()
 
         # Restore excluded attributes
         for key, value in save.items():
@@ -863,7 +877,7 @@ class AbstractContainer(ABC):
 
 
 class _StreamingQueue:
-    def __init__(self, chunk_size: int = 64 * 1024 * 1024, maxsize: int = 8):
+    def __init__(self, chunk_size: int = 65536, maxsize: int = 8):
         self.queue: Queue[bytes | None] = Queue(maxsize=maxsize)
         self.buffer: bytearray = bytearray()
         self.chunk_size: int = chunk_size

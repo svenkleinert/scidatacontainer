@@ -78,6 +78,38 @@ class FileHdf5Test(TestCase):
 
     def test_hash(self):
         a = get_test_container()
+
+        del a["meas/image.tsv"]  # remove int array that causes float precision error
+        data = np.reshape(np.arange(10 * 10 * 3), (10, 10, 3))
+        moredata = {
+            "data1": data + 100,
+            "data2": data * 10,
+            "attr1": "test123",
+            "attr2": 123,
+            "attr3": np.float64(1.23),
+            "attr4": [123, 1.24],
+            "attr5": ["123", "1.24"],
+            "attr6": [[123, 12], [1234, 1234]],
+        }
+
+        a["data/test.hdf5"] = data
+        a["data/test2.hdf5"] = moredata
+        a.freeze()
+        a.write("test.zdc")
+
+        b = Container(file="test.zdc")
+        b.hash()
+
+        self.assertEqual(a["content.json"]["hash"], b["content.json"]["hash"])
+        self.assertEqual(
+            b["content.json"]["hash"],
+            "88843665132e891d6a332a24397970fbfe9a2f89b509193412103aefbae8e816",
+        )
+
+    def test_legacy_hash(self):
+        a = get_test_container()
+        a["content.json"]["modelVersion"] = "1.0.0"
+
         del a["meas/image.tsv"]  # remove int array that causes float precision error
         data = np.reshape(np.arange(10 * 10 * 3), (10, 10, 3))
         moredata = {
