@@ -468,7 +468,14 @@ class AbstractContainer(ABC):
         self["content.json"]["hash"] = None
 
         # Calculate and store hash of this container
-        hashes = [self._items[p].hash() for p in sorted(self.items())]
+        hashes = []
+        for p in sorted(self.items()):
+            if isinstance(self._items[p], pathlib.Path):
+                with open(self._items[p], "rb") as fp:
+                    hashes.append(hashlib.file_digest(fp, "sha256").hexdigest())
+            else:
+                hashes.append(self._items[p].hash())
+
         myhash = hashlib.sha256(" ".join(hashes).encode("ascii")).hexdigest()
         self["content.json"]["hash"] = myhash
 
@@ -491,7 +498,7 @@ class AbstractContainer(ABC):
     def release(self):
         """Make this container mutable. If it was immutable, this method
         will create a new UUID and initialize the attributes replaces,
-        createdstorageTime and modelVersion in the item "content.json".
+        created, storageTime and modelVersion in the item "content.json".
         It will also delete an existing hash and make it a new
         container."""
         # Do nothing if the container is already mutable
