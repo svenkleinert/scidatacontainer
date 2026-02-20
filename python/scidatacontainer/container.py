@@ -472,7 +472,12 @@ class AbstractContainer(ABC):
         for p in sorted(self.items()):
             if isinstance(self._items[p], pathlib.Path):
                 with open(self._items[p], "rb") as fp:
-                    hashes.append(hashlib.file_digest(fp, "sha256").hexdigest())
+                    # python <= 3.10 doesn't support file_digest
+                    # to be removed after 31 Oct. 2026
+                    try:
+                        hashes.append(hashlib.file_digest(fp, "sha256").hexdigest())
+                    except AttributeError:
+                        hashes.append(hashlib.sha256(fp.read()).hexdigest())
             else:
                 hashes.append(self._items[p].hash())
 
