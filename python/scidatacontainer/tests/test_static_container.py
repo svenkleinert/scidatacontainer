@@ -1,5 +1,7 @@
 import copy
 import os
+import unittest
+from datetime import datetime, timezone
 
 from scidatacontainer import Container
 
@@ -61,7 +63,6 @@ class TestStaticContainer(AbstractContainerTest):
         dc = Container(items=items)
 
         super()._compare_with_items(dc)
-
         self.assertIsNone(dc["content.json"]["hash"])
         self.assertFalse(dc["content.json"]["static"])
 
@@ -70,6 +71,10 @@ class TestStaticContainer(AbstractContainerTest):
         self._compare_with_items(dc)
         self.assertTrue(dc["content.json"]["static"])
         self.assertIsNotNone(dc["content.json"]["hash"])
+        self.assertEqual(
+            dc["content.json"]["hash"],
+            "7a836281f4631bc6d17f41bf3b03dd1de4fd7fbcec08ea588c19752ab3668905",
+        )
 
         self.dc = dc
 
@@ -88,8 +93,26 @@ class TestStaticContainer(AbstractContainerTest):
         self._compare_with_minimal_items(dc)
         self.assertTrue(dc["content.json"]["static"])
         self.assertIsNotNone(dc["content.json"]["hash"])
+        self.assertEqual(
+            dc["content.json"]["hash"],
+            "78cb6994e23639ffc9c47571e8213650adf42185b19dd98778d1dc5cca227cfb",
+        )
 
         self.dc = dc
+
+    @unittest.expectedFailure
+    def test_hash_collision(self):
+        self.test_freeze()
+
+        old_hash = self.dc["content.json"]["hash"]
+
+        self.dc.release()
+
+        del self.dc["meas/image.tsv"]
+        self.dc["meas/image3.tsv"] = self.data
+
+        self.dc.freeze()
+        self.assertNotEqual(old_hash, self.dc["content.json"]["hash"])
 
     def test_write(self, clean=True):
         self.test_freeze()
@@ -132,14 +155,15 @@ class TestStaticContainer(AbstractContainerTest):
 
         self.assertIn("Static Container", s)
         ct = self.items["content.json"]["containerType"]
-        self.assertIn("type:        " + ct["name"] + " " + ct["version"]
-                      + " (" + ct["id"] + ")", s)
+        self.assertIn(
+            "type:        " + ct["name"] + " " + ct["version"] + " (" + ct["id"] + ")",
+            s,
+        )
         self.assertIn("uuid:        " + self.dc["content.json"]["uuid"], s)
         self.assertIn("replaces:    " + self.dc["content.json"]["replaces"], s)
         self.assertIn("hash:        " + self.dc["content.json"]["hash"], s)
         self.assertIn("created:     " + self.dc["content.json"]["created"], s)
-        self.assertIn("storageTime: " + self.dc["content.json"]["storageTime"],
-                      s)
+        self.assertIn("storageTime: " + self.dc["content.json"]["storageTime"], s)
         self.assertIn("author:      " + self.dc["meta.json"]["author"], s)
 
     def test_immutable(self):

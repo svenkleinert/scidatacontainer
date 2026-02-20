@@ -497,8 +497,8 @@ class AbstractContainer(ABC):
 
     def release(self):
         """Make this container mutable. If it was immutable, this method
-        will create a new UUID and initialize the attributes replaces,
-        created, storageTime and modelVersion in the item "content.json".
+        will create a new UUID and initialize the attributes created,
+        storageTime and modelVersion in the item "content.json".
         It will also delete an existing hash and make it a new
         container."""
         # Do nothing if the container is already mutable
@@ -516,7 +516,7 @@ class AbstractContainer(ABC):
         content = self["content.json"]
         content["static"] = False
         content["complete"] = True
-        for key in ("uuid", "replaces", "created", "storageTime", "hash"):
+        for key in ("uuid", "created", "storageTime", "hash"):
             content.pop(key, None)
         self.validate_content()
 

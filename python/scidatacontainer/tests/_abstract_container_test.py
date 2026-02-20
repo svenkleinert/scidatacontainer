@@ -1,6 +1,6 @@
 import uuid
 from abc import ABC
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest import TestCase
 
 import requests
@@ -41,7 +41,7 @@ class AbstractContainerTest(ABC, TestCase):
         cls.items = {
             "content.json": {
                 "uuid": str(uuid.uuid4()),
-                "replaces": str(uuid.uuid4()),
+                "replaces": "b185cc38-1c62-404b-8373-89a4605845ca",
                 "containerType": {"name": "TestType", "id": "TestID", "version": "0.1"},
                 "usedSoftware": [
                     {
@@ -68,9 +68,11 @@ class AbstractContainerTest(ABC, TestCase):
                 "title": "This is a sample image dataset",
                 "keywords": ["keyword1", "keyword2", "keyword3"],
                 "description": "Example description",
-                "doi": "https://example.com/" + str(uuid.uuid4()),
+                "doi": "https://example.com/1234abc1234",
                 "license": "MIT",
-                "timestamp": cls.timestamp,
+                "timestamp": datetime(2025, 1, 1, tzinfo=timezone.utc).isoformat(
+                    timespec="seconds"
+                ),
             },
             "meas/image.tsv": cls.data,
             "data/parameter.json": cls.parameter,
@@ -127,7 +129,10 @@ class AbstractContainerTest(ABC, TestCase):
             items["meta.json"]["description"], dc["meta.json"]["description"]
         )
 
-        self.assertEqual(self.timestamp, dc["meta.json"]["timestamp"])
+        self.assertEqual(
+            datetime(2025, 1, 1, tzinfo=timezone.utc).isoformat(timespec="seconds"),
+            dc["meta.json"]["timestamp"],
+        )
 
         self.assertEqual(items["meta.json"]["doi"], dc["meta.json"]["doi"])
 
