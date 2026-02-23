@@ -74,7 +74,7 @@ class AbstractContainer(ABC):
         config: dict | None = None,
         compression: int = ZIP_DEFLATED,
         compresslevel: int = -1,
-        ignore_files: list[str] = [],
+        ignore_items: list[str] = [],
         **kwargs,
     ):
         """Construct a DataContainer object.
@@ -94,7 +94,7 @@ class AbstractContainer(ABC):
             key: API-Key from the server to identify yourself.
             compression: Numeric constant for the compression method
             compresslevel: Level of compression, 0-fastest, 9-best compression
-            ignore_files: List of files that are not loaded to memory
+            ignore_items: List of container items that are not loaded to memory
         """
         self.kwargs = {
             "items": items,
@@ -103,7 +103,7 @@ class AbstractContainer(ABC):
             "config": config,
             "compression": compression,
             "compresslevel": compresslevel,
-            "ignore_files": ignore_files,
+            "ignore_items": ignore_items,
         }
         self.kwargs.update(kwargs)
 
@@ -128,14 +128,14 @@ class AbstractContainer(ABC):
 
         # Load local container file
         elif n.file is not None:
-            self._read(fn=n.file, ignore_files=n.ignore_files)
+            self._read(fn=n.file, ignore_items=n.ignore_items)
 
         # Download container from server
         elif n.uuid is not None:
             server = self._config["server"]
             key = self._config["key"]
             self._download(
-                uuid=n.uuid, server=server, key=key, ignore_files=n.ignore_files
+                uuid=n.uuid, server=server, key=key, ignore_items=n.ignore_items
             )
 
         # No data source
@@ -144,14 +144,14 @@ class AbstractContainer(ABC):
 
         self.compression = n.compression
         self.compresslevel = n.compresslevel
-        self.ignore_files = n.ignore_files
+        self.ignore_items = n.ignore_items
 
         # Check validity of author ORCID
         self._norm_orcid()
 
-        if self.mutable and len(self.ignore_files) > 0:
+        if self.mutable and len(self.ignore_items) > 0:
             raise RuntimeError(
-                "Partial loading of files only supported for immutable files!"
+                "Partial loading of items only supported for immutable containers!"
             )
         self.__post_init__()
 
@@ -279,7 +279,7 @@ class AbstractContainer(ABC):
             if isinstance(self._items[path], pathlib.Path):
                 return self._items[path]
             return self._items[path].data
-        if path in self.ignore_files:
+        if path in self.ignore_items:
             raise KeyError(f"Item '{path}' was ignored while reading the file.")
         raise KeyError("Unknown item '%s'!" % path)
 
@@ -524,10 +524,10 @@ class AbstractContainer(ABC):
         if self.mutable:
             return
 
-        if len(self.ignore_files) > 0:
+        if len(self.ignore_items) > 0:
             raise RuntimeError(
                 "Modifying a file that was only partially read is not supported!"
-                + " Make sure 'ignore_files' is empty during initialisation."
+                + " Make sure 'ignore_items' is empty during initialisation."
             )
         self.mutable = True
 
@@ -601,7 +601,7 @@ class AbstractContainer(ABC):
     def decode(
         self,
         fp: io.RawIOBase | io.BufferedIOBase,
-        ignore_files: list[str] = [],
+        ignore_items: list[str] = [],
         validate: bool = True,
         strict: bool = True,
     ):
@@ -610,12 +610,12 @@ class AbstractContainer(ABC):
 
         Args:
             fp: File object to read from.
-            ignore_files: List of file paths that are not read into memory.
+            ignore_items: List of file paths that are not read into memory.
             validate: If true, validate the content.
             strict: If true, validate the hash, too.
         """
         with ZipFile(fp, "r") as zfp:
-            items = {p: zfp.read(p) for p in zfp.namelist() if p not in ignore_files}
+            items = {p: zfp.read(p) for p in zfp.namelist() if p not in ignore_items}
         self._store(items, validate, strict)
 
     def write(self, fn: str, data: bytes | None = None):
@@ -644,12 +644,12 @@ class AbstractContainer(ABC):
             self["content.json"]["static"] or self["content.json"]["complete"]
         )
 
-    def _read(self, fn: str, ignore_files: list[str] = [], strict: bool = True):
+    def _read(self, fn: str, ignore_items: list[str] = [], strict: bool = True):
         """Read a ZIP package file and store it as container in this
         object.
         """
         with open(fn, "rb") as fp:
-            self.decode(fp, ignore_files, False, strict)
+            self.decode(fp, ignore_items, False, strict)
 
         self.mutable = not (
             self["content.json"]["static"] or self["content.json"]["complete"]
@@ -739,7 +739,7 @@ class AbstractContainer(ABC):
         )
 
     def _download(
-        self, uuid, strict=True, server=None, key=None, ignore_files: list[str] = []
+        self, uuid, strict=True, server=None, key=None, ignore_items: list[str] = []
     ):
         # Server name is required and must be provided either via config
         # file, environment variable or method parameter
@@ -768,7 +768,7 @@ class AbstractContainer(ABC):
 
         # Valid dataset: Store in this container
         if response.status_code == 200:
-            self.decode(fp, ignore_files, False, strict)
+            self.decode(fp, ignore_items, False, strict)
 
         # Deleted dataset: Raise exception
         elif response.status_code == 204:
@@ -776,7 +776,7 @@ class AbstractContainer(ABC):
 
         # Replaced dataset: Store in this container
         elif response.status_code == 301:
-            self.decode(fp, ignore_files, strict)
+            self.decode(fp, ignore_items, strict)
 
         # Unauthorized access
         elif response.status_code == 403:

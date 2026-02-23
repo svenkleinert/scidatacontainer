@@ -23,7 +23,7 @@ class FileIOObjectTest(TestCase):
 
         a.write("test.zdc")
 
-        b = Container(file="test.zdc", ignore_files=["data/test.exe"])
+        b = Container(file="test.zdc", ignore_items=["data/test.exe"])
 
         with self.assertRaisesRegex(
             KeyError, r"Item 'data/test\.exe' was ignored while reading the file\."
@@ -46,10 +46,10 @@ class FileIOObjectTest(TestCase):
         self.assertEqual(btext, a["data/test.exe"])
 
         a.write("test.zdc")
-        b = Container(file="test.zdc", ignore_files=["data/test.exe"])
+        b = Container(file="test.zdc", ignore_items=["data/test.exe"])
         with self.assertRaisesRegex(
             RuntimeError,
-            r"Modifying a file that was only partially read is not supported! Make sure 'ignore_files' is empty during initialisation.",
+            r"Modifying a file that was only partially read is not supported! Make sure 'ignore_items' is empty during initialisation.",
         ):
             b.release()
 
@@ -73,6 +73,6 @@ class FileIOObjectTest(TestCase):
 
         with self.assertRaisesRegex(
             RuntimeError,
-            r"Partial loading of files only supported for immutable files!",
+            r"Partial loading of items only supported for immutable containers!",
         ):
-            Container(file="test.zdc", ignore_files=["data/test.exe"])
+            Container(file="test.zdc", ignore_items=["data/test.exe"])
