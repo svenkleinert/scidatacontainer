@@ -1,7 +1,5 @@
 import copy
 import os
-import unittest
-from datetime import datetime, timezone
 
 from scidatacontainer import Container
 
@@ -159,6 +157,23 @@ class TestStaticContainer(AbstractContainerTest):
 
     def test_read_wrong_hash(self, clean=True):
         self.test_freeze()
+        self.dc.content["hash"] += "ab"
+        self.dc.write(self.export_filename)
+
+        with self.assertRaises(RuntimeError) as cm:
+            Container(file=self.export_filename)
+
+        self.assertEqual(cm.exception.args[0], "Wrong hash!")
+
+        if clean:
+            os.remove(self.export_filename)
+
+    def test_read_wrong_legacy_hash(self, clean=True):
+        self.test_freeze()
+        self.dc.release()
+        self.dc.content["modelVersion"] = "1.0.0"
+        self.dc.hash()
+        self.dc.freeze()
         self.dc.content["hash"] += "ab"
         self.dc.write(self.export_filename)
 
