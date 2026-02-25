@@ -239,9 +239,9 @@ class AbstractContainer(ABC):
         if not self.mutable:
             raise RuntimeError("Immutable container!")
 
-        # Store pathlib.Path object as they are.
-        if isinstance(data, pathlib.Path):
-            self._items[path] = data
+        # Store dict with pathlib.Path object as specil types.
+        if isinstance(data, dict) and isinstance(data.get("path", None), pathlib.Path):
+            self._items[path] = _OnDiskFile(**data)
             return
 
         # Get file extension
@@ -281,7 +281,7 @@ class AbstractContainer(ABC):
     def __getitem__(self, path):
         """Get the data content of a container item."""
         if path in self:
-            if isinstance(self._items[path], pathlib.Path):
+            if isinstance(self._items[path], _OnDiskFile):
                 return self._items[path]
             return self._items[path].data
         if path in self.ignore_items:
@@ -479,14 +479,12 @@ class AbstractContainer(ABC):
             while chunk := content.read(65536):
                 hash_object.update(chunk)
             return
-        if item_name in self._items and isinstance(
-            self._items[item_name], pathlib.Path
-        ):
+        if item_name in self._items and isinstance(self._items[item_name], _OnDiskFile):
             if legacy:
                 raise RuntimeError(
                     "File like objects are only supported from modelVersion '1.0.1' on."
                 )
-            with open(self._items[item_name], "rb") as fp:
+            with open(self._items[item_name].path, "rb") as fp:
                 while chunk := fp.read(65536):
                     hash_object.update(chunk)
             return
@@ -567,11 +565,11 @@ class AbstractContainer(ABC):
         in_memory_items = {
             p: self._items[p]
             for p in self.items()
-            if not isinstance(self[p], pathlib.Path)
+            if not isinstance(self[p], _OnDiskFile)
         }
 
         in_filesystem_items = {
-            p: self._items[p] for p in self.items() if isinstance(self[p], pathlib.Path)
+            p: self._items[p] for p in self.items() if isinstance(self[p], _OnDiskFile)
         }
 
         # create FiFo queue with limited size
@@ -591,9 +589,10 @@ class AbstractContainer(ABC):
 
                     for path in sorted(in_filesystem_items.keys()):
                         zfp.write(
-                            in_filesystem_items[path],
+                            in_filesystem_items[path].path,
                             arcname=path,
-                            compress_type=self.compression,
+                            compress_type=in_filesystem_items[path].compression,
+                            compresslevel=in_filesystem_items[path].compression_level,
                         )
             except Exception as e:
                 queue.error = e
@@ -912,6 +911,20 @@ class AbstractContainer(ABC):
         self["meta.json"]["orcid"] = (
             orcid[:4] + "-" + orcid[4:8] + "-" + orcid[8:12] + "-" + orcid[12:]
         )
+
+
+class _OnDiskFile:
+    """Class to represent an OnDiskFile that doesn't need to be encoded."""
+
+    def __init__(
+        self,
+        path: pathlib.Path,
+        compression: int | None = None,
+        compression_level: int | None = None,
+    ) -> None:
+        self.path: pathlib.Path = path
+        self.compression: int | None = compression
+        self.compression_level: int | None = compression_level
 
 
 class _StreamingQueue:

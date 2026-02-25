@@ -1,6 +1,7 @@
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from unittest import TestCase
+from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
 
 from scidatacontainer import Container
 
@@ -22,7 +23,7 @@ class FilePathTest(TestCase):
             tfp.write(text.encode("utf-8"))
             tfp.seek(0)
 
-            a["data/test.exe"] = Path(tfp.name)
+            a["data/test.exe"] = {"path": Path(tfp.name)}
 
             a.write("test.zdc")
 
@@ -32,7 +33,7 @@ class FilePathTest(TestCase):
     def test_invalid_file_path(self):
         a = get_test_container()
 
-        a["data/test.exe"] = Path("/this/path/doesnt/exist")
+        a["data/test.exe"] = {"path": Path("/this/path/doesnt/exist")}
 
         with self.assertRaisesRegex(
             FileNotFoundError,
@@ -54,7 +55,7 @@ class FilePathTest(TestCase):
             tfp.write(text.encode("utf-8"))
             tfp.seek(0)
 
-            a["data/test.exe"] = Path(tfp.name)
+            a["data/test.exe"] = {"path": Path(tfp.name)}
 
             a.freeze()
             a.write("test.zdc")
@@ -79,7 +80,7 @@ class FilePathTest(TestCase):
             tfp.write(text.encode("utf-8"))
             tfp.seek(0)
 
-            a["data/test.json"] = Path(tfp.name)
+            a["data/test.json"] = {"path": Path(tfp.name)}
 
             a.freeze()
             a.write("test.zdc")
@@ -103,7 +104,7 @@ class FilePathTest(TestCase):
             tfp.write(text.encode("utf-8"))
             tfp.seek(0)
 
-            a["data/test.exe"] = Path(tfp.name)
+            a["data/test.exe"] = {"path": Path(tfp.name)}
 
             with self.assertRaisesRegex(
                 RuntimeError,
@@ -111,3 +112,36 @@ class FilePathTest(TestCase):
             ):
                 a.freeze()
                 a.write("test.zdc")
+
+    def test_compression_type(self):
+        a = get_test_container()
+
+        text = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed "
+        text += "do eiusmod tempor incididunt ut labore et dolore magna "
+        text += "aliqua. Varius duis at consectetur lorem donec massa. Amet "
+        text += "consectetur adipiscing elit ut aliquam purus sit amet. Duis "
+        text += "ultricies lacus sed turpis tincidunt id aliquet risus "
+        text += "feugiat. Dui id ornare arcu odio ut sem nulla pharetra."
+
+        with NamedTemporaryFile() as tfp:
+            tfp.write(text.encode("utf-8"))
+            tfp.seek(0)
+
+            a["data/test.exe"] = {"path": Path(tfp.name), "compression": ZIP_STORED}
+            a.write("test.zdc")
+
+            with open("test.zdc", "rb") as fp:
+                with ZipFile(fp) as zfp:
+                    self.assertEqual(
+                        zfp.getinfo("data/test.exe").compress_type, ZIP_STORED
+                    )
+
+            a.release()
+            a["data/test.exe"] = {"path": Path(tfp.name), "compression": ZIP_DEFLATED}
+            a.write("test.zdc")
+
+            with open("test.zdc", "rb") as fp:
+                with ZipFile(fp) as zfp:
+                    self.assertEqual(
+                        zfp.getinfo("data/test.exe").compress_type, ZIP_DEFLATED
+                    )
