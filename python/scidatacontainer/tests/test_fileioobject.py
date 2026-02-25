@@ -67,6 +67,27 @@ class FilePathTest(TestCase):
             "f66ca1f63274a613e8769902349cd6182403a45fb75df2db9afb2fe0426b9bec",
         )
 
+    def test_changing_hash(self):
+        """
+        This test covers the case that a decode-encode cycle would change the data.
+        This might be the case for example for json files that are not correctly formatted
+        or have unsorted keys.
+        """
+        a = get_test_container()
+        text = '{"a": "123", "b": true}'
+        with NamedTemporaryFile() as tfp:
+            tfp.write(text.encode("utf-8"))
+            tfp.seek(0)
+
+            a["data/test.json"] = Path(tfp.name)
+
+            a.freeze()
+            a.write("test.zdc")
+
+        b = Container(file="test.zdc")
+        b.hash()
+        self.assertNotEqual(a["content.json"]["hash"], b["content.json"]["hash"])
+
     def test_legacy_hash(self):
         a = get_test_container()
         a["content.json"]["modelVersion"] = "1.0.0"
@@ -84,13 +105,9 @@ class FilePathTest(TestCase):
 
             a["data/test.exe"] = Path(tfp.name)
 
-            a.freeze()
-            a.write("test.zdc")
-
-        b = Container(file="test.zdc")
-        b.hash()
-        self.assertEqual(a["content.json"]["hash"], b["content.json"]["hash"])
-        self.assertEqual(
-            b["content.json"]["hash"],
-            "dad3134b6b7dd2f50557ce5d891eb74faac9dcf28e03e51194d21ad4570be7b5",
-        )
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "File like objects are only supported from modelVersion '1.0.1' on.",
+            ):
+                a.freeze()
+                a.write("test.zdc")

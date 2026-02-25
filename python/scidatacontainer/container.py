@@ -107,6 +107,7 @@ class AbstractContainer(ABC):
         }
         self.kwargs.update(kwargs)
 
+        self._items = {}
         self.__pre_init__()
 
         # Load variables from kwargs in namespace
@@ -191,15 +192,19 @@ class AbstractContainer(ABC):
             self.validate_content()
             self.validate_meta()
 
+        # validate hash for old modelVersions
+        if (
+            strict
+            and self["content.json"]["hash"]
+            and self["content.json"]["modelVersion"] < "1.0.1"
+        ):
+            old_hash = self["content.json"]["hash"]
+            self.hash()
+            if old_hash != self["content.json"]["hash"]:
+                raise RuntimeError("Wrong hash!")
+
         if self["content.json"]["static"] and not self["content.json"]["hash"]:
             self.hash()
-
-        # Check validity of hash
-        if strict and self["content.json"]["hash"]:
-            oldhash = self["content.json"]["hash"]
-            self.hash()
-            if self["content.json"]["hash"] != oldhash:
-                raise RuntimeError("Wrong hash!")
 
         # Restore mutable flag
         self.mutable = mutable
@@ -457,22 +462,38 @@ class AbstractContainer(ABC):
         """
         return {k: self[k] for k in self.keys()}
 
-    def _legacy_hash(self) -> str:
-        # Calculate and store hash of this container
-        hashes = []
-        for p in sorted(self.items()):
-            if isinstance(self._items[p], pathlib.Path):
-                with open(self._items[p], "rb") as fp:
-                    # python <= 3.10 doesn't support file_digest
-                    # to be removed after 31 Oct. 2026
-                    try:
-                        hashes.append(hashlib.file_digest(fp, "sha256").hexdigest())
-                    except AttributeError:
-                        hashes.append(hashlib.sha256(fp.read()).hexdigest())
-            else:
-                hashes.append(self._items[p].hash())
+    def _hash(
+        self,
+        hash_object,
+        item_name: str,
+        content: bytes | typing.IO[bytes] | None = None,
+        legacy: bool = False,
+    ):
+        if not legacy:
+            hash_object.update(item_name.encode("utf8"))
 
-        return hashlib.sha256(" ".join(hashes).encode("ascii")).hexdigest()
+        if isinstance(content, bytes):
+            hash_object.update(content)
+            return
+        if content is not None and hasattr(content, "read"):
+            while chunk := content.read(65536):
+                hash_object.update(chunk)
+            return
+        if item_name in self._items and isinstance(
+            self._items[item_name], pathlib.Path
+        ):
+            if legacy:
+                raise RuntimeError(
+                    "File like objects are only supported from modelVersion '1.0.1' on."
+                )
+            with open(self._items[item_name], "rb") as fp:
+                while chunk := fp.read(65536):
+                    hash_object.update(chunk)
+            return
+        if legacy:
+            hash_object.update(self._items[item_name].hash().encode("ascii"))
+        else:
+            hash_object.update(self._items[item_name].encode())
 
     def hash(self):
         """Calculate and save the hash value of this container."""
@@ -484,19 +505,14 @@ class AbstractContainer(ABC):
             self["content.json"][key] = None
         self["content.json"]["hash"] = None
 
-        if self["content.json"]["modelVersion"] < "1.0.1":
-            self["content.json"]["hash"] = self._legacy_hash()
-        else:
-            h = hashlib.sha256()
-            for p in sorted(self.items()):
-                h.update(p.encode("utf8"))
-                if isinstance(self._items[p], pathlib.Path):
-                    with open(self._items[p], "rb") as fp:
-                        while chunk := fp.read(65536):
-                            h.update(chunk)
-                else:
-                    h.update(self._items[p].encode())
-            self["content.json"]["hash"] = h.hexdigest()
+        legacy = bool(self["content.json"]["modelVersion"] < "1.0.1")
+
+        h = hashlib.sha256()
+        for i, p in enumerate(sorted(self.items())):
+            if legacy and i != 0:
+                h.update(b" ")
+            self._hash(h, p, legacy=legacy)
+        self["content.json"]["hash"] = h.hexdigest()
 
         # Restore excluded attributes
         for key, value in save.items():
@@ -616,6 +632,28 @@ class AbstractContainer(ABC):
         """
         with ZipFile(fp, "r") as zfp:
             items = {p: zfp.read(p) for p in zfp.namelist() if p not in ignore_items}
+
+            # trigger decoding content.json
+            self["content.json"] = items["content.json"]
+            hash = self["content.json"]["hash"]
+            modelVersion = self["content.json"]["modelVersion"]
+
+            # validate hash value, if the legacy hash function is not required
+            if strict and hash and modelVersion >= "1.0.1":
+                for key in ("uuid", "created", "storageTime", "hash"):
+                    self["content.json"][key] = None
+
+                h = hashlib.sha256()
+                for p in sorted(zfp.namelist()):
+                    if p == "content.json":
+                        self._hash(h, p)
+                    else:
+                        with zfp.open(p) as f:
+                            self._hash(h, p, content=f)
+
+                # Check validity of hash
+                if hash != h.hexdigest():
+                    raise RuntimeError("Wrong hash!")
         self._store(items, validate, strict)
 
     def write(self, fn: str, data: bytes | None = None):
