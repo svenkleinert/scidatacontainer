@@ -37,6 +37,22 @@ However, both values can also be specified as method parameters::
     >>> dc.upload(server="...", key="...")
     >>> dc = Container(uuid="306e2c2d-a9f6-4306-8851-1ee0fceeb852", server="...", key="...")
 
+Files Items
+-----------
+
+To add an already existing file to the container (without loading it into the memory) assign a dictionary to an item with its ``path`` key being an instance of ``pathlib.Path``. This file won't be encoded during ``write()`` or ``upload()`` but will instead be added chunkwise to the container::
+
+    >>> dc["test.hdf5"] = {"path": pathlib.Path("/in/filesystem/path.hdf5"), "compression": zipfile.ZIP_DEFLATED, "compression_level": 9}
+
+``compression`` and ``compression_level`` are optional. If not specified, the default settings of the container will be used.
+
+If you don't want to load all items of a container into memory, you can use the ``ignore_items`` parameter. This will skip the specified items during decoding::
+
+    >>> dc = Container(file="...", ignore_items=["data/test.hdf5", "log/test.txt"])
+    >>> # print(dc["data/test.hdf5"]) <- this would throw an error!
+
+If the container was loaded with ``ignore_items``, it is not mutable! This could cause problems if a file was read and then deleted or modified between reading and writing.
+
 
 File Formats
 ------------

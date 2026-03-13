@@ -15,10 +15,14 @@ import copy
 import hashlib
 import io
 import json
+import pathlib
 import typing
 import uuid
 from abc import ABC
+from collections.abc import Iterator
 from datetime import datetime, timezone
+from queue import Queue
+from threading import Thread
 from types import SimpleNamespace
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -28,7 +32,7 @@ from .config import load_config
 from .filebase import BinaryFile, JsonFile, TextFile
 
 # Version of the implemented data model
-MODELVERSION = "1.0.0"
+MODELVERSION = "1.0.1"
 
 
 ##########################################################################
@@ -64,12 +68,13 @@ class AbstractContainer(ABC):
 
     def __init__(
         self,
-        items: dict = None,
-        file: str = None,
-        uuid: str = None,
-        config: dict = None,
+        items: dict | None = None,
+        file: str | None = None,
+        uuid: str | None = None,
+        config: dict | None = None,
         compression: int = ZIP_DEFLATED,
         compresslevel: int = -1,
+        ignore_items: list[str] = [],
         **kwargs,
     ):
         """Construct a DataContainer object.
@@ -89,6 +94,7 @@ class AbstractContainer(ABC):
             key: API-Key from the server to identify yourself.
             compression: Numeric constant for the compression method
             compresslevel: Level of compression, 0-fastest, 9-best compression
+            ignore_items: List of container items that are not loaded to memory
         """
         self.kwargs = {
             "items": items,
@@ -97,9 +103,11 @@ class AbstractContainer(ABC):
             "config": config,
             "compression": compression,
             "compresslevel": compresslevel,
+            "ignore_items": ignore_items,
         }
         self.kwargs.update(kwargs)
 
+        self._items = {}
         self.__pre_init__()
 
         # Load variables from kwargs in namespace
@@ -121,13 +129,15 @@ class AbstractContainer(ABC):
 
         # Load local container file
         elif n.file is not None:
-            self._read(fn=n.file)
+            self._read(fn=n.file, ignore_items=n.ignore_items)
 
         # Download container from server
         elif n.uuid is not None:
             server = self._config["server"]
             key = self._config["key"]
-            self._download(uuid=n.uuid, server=server, key=key)
+            self._download(
+                uuid=n.uuid, server=server, key=key, ignore_items=n.ignore_items
+            )
 
         # No data source
         else:
@@ -135,10 +145,15 @@ class AbstractContainer(ABC):
 
         self.compression = n.compression
         self.compresslevel = n.compresslevel
+        self.ignore_items = n.ignore_items
 
         # Check validity of author ORCID
         self._norm_orcid()
 
+        if self.mutable and len(self.ignore_items) > 0:
+            raise RuntimeError(
+                "Partial loading of items only supported for immutable containers!"
+            )
         self.__post_init__()
 
     def __pre_init__(self):
@@ -177,15 +192,19 @@ class AbstractContainer(ABC):
             self.validate_content()
             self.validate_meta()
 
+        # validate hash for old modelVersions
+        if (
+            strict
+            and self["content.json"]["hash"]
+            and self["content.json"]["modelVersion"] < "1.0.1"
+        ):
+            old_hash = self["content.json"]["hash"]
+            self.hash()
+            if old_hash != self["content.json"]["hash"]:
+                raise RuntimeError("Wrong hash!")
+
         if self["content.json"]["static"] and not self["content.json"]["hash"]:
             self.hash()
-
-        # Check validity of hash
-        if strict and self["content.json"]["hash"]:
-            oldhash = self["content.json"]["hash"]
-            self.hash()
-            if self["content.json"]["hash"] != oldhash:
-                raise RuntimeError("Wrong hash!")
 
         # Restore mutable flag
         self.mutable = mutable
@@ -220,6 +239,11 @@ class AbstractContainer(ABC):
         if not self.mutable:
             raise RuntimeError("Immutable container!")
 
+        # Store dict with pathlib.Path object as specil types.
+        if isinstance(data, dict) and isinstance(data.get("path", None), pathlib.Path):
+            self._items[path] = _OnDiskFile(**data)
+            return
+
         # Get file extension
         ext = path.rsplit(".", 1)[1]
 
@@ -243,8 +267,7 @@ class AbstractContainer(ABC):
                     item = cls(data)
                 else:
                     raise RuntimeError(
-                        "No matching file format found for "
-                        + "item '%s'!" % path
+                        "No matching file format found for " + "item '%s'!" % path
                     )
 
         # Registered file extension
@@ -258,7 +281,11 @@ class AbstractContainer(ABC):
     def __getitem__(self, path):
         """Get the data content of a container item."""
         if path in self:
+            if isinstance(self._items[path], _OnDiskFile):
+                return self._items[path]
             return self._items[path].data
+        if path in self.ignore_items:
+            raise KeyError(f"Item '{path}' was ignored while reading the file.")
         raise KeyError("Unknown item '%s'!" % path)
 
     def validate_content(self):
@@ -435,6 +462,37 @@ class AbstractContainer(ABC):
         """
         return {k: self[k] for k in self.keys()}
 
+    def _hash(
+        self,
+        hash_object,
+        item_name: str,
+        content: bytes | typing.IO[bytes] | None = None,
+        legacy: bool = False,
+    ):
+        if not legacy:
+            hash_object.update(item_name.encode("utf8"))
+
+        if isinstance(content, bytes):
+            hash_object.update(content)
+            return
+        if content is not None and hasattr(content, "read"):
+            while chunk := content.read(65536):
+                hash_object.update(chunk)
+            return
+        if item_name in self._items and isinstance(self._items[item_name], _OnDiskFile):
+            if legacy:
+                raise RuntimeError(
+                    "File like objects are only supported from modelVersion '1.0.1' on."
+                )
+            with open(self._items[item_name].path, "rb") as fp:
+                while chunk := fp.read(65536):
+                    hash_object.update(chunk)
+            return
+        if legacy:
+            hash_object.update(self._items[item_name].hash().encode("ascii"))
+        else:
+            hash_object.update(self._items[item_name].encode())
+
     def hash(self):
         """Calculate and save the hash value of this container."""
         # Some attributes of content.json are excluded from the hash
@@ -445,10 +503,14 @@ class AbstractContainer(ABC):
             self["content.json"][key] = None
         self["content.json"]["hash"] = None
 
-        # Calculate and store hash of this container
-        hashes = [self._items[p].hash() for p in sorted(self.items())]
-        myhash = hashlib.sha256(" ".join(hashes).encode("ascii")).hexdigest()
-        self["content.json"]["hash"] = myhash
+        legacy = bool(self["content.json"]["modelVersion"] < "1.0.1")
+
+        h = hashlib.sha256()
+        for i, p in enumerate(sorted(self.items())):
+            if legacy and i != 0:
+                h.update(b" ")
+            self._hash(h, p, legacy=legacy)
+        self["content.json"]["hash"] = h.hexdigest()
 
         # Restore excluded attributes
         for key, value in save.items():
@@ -468,62 +530,132 @@ class AbstractContainer(ABC):
 
     def release(self):
         """Make this container mutable. If it was immutable, this method
-        will create a new UUID and initialize the attributes replaces,
-        createdstorageTime and modelVersion in the item "content.json".
+        will create a new UUID and initialize the attributes created,
+        storageTime and modelVersion in the item "content.json".
         It will also delete an existing hash and make it a new
         container."""
         # Do nothing if the container is already mutable
         if self.mutable:
             return
+
+        if len(self.ignore_items) > 0:
+            raise RuntimeError(
+                "Modifying a file that was only partially read is not supported!"
+                + " Make sure 'ignore_items' is empty during initialisation."
+            )
         self.mutable = True
 
         # Remove and initialize certain container attributes
         content = self["content.json"]
         content["static"] = False
         content["complete"] = True
-        for key in ("uuid", "replaces", "created", "storageTime", "hash"):
+        for key in ("uuid", "created", "storageTime", "hash"):
             content.pop(key, None)
         self.validate_content()
 
-    def encode(self):
-        """Encode container as ZIP package. Return package as binary
-        string.
-        """
+    def encode(self) -> Iterator[bytes]:
+        """Encode container as ZIP package.
+
+        Yields:
+            bytes: next chunk of the generated zip file."""
 
         # Check/format of author ORCID
         self._norm_orcid()
 
-        items = {p: self._items[p].encode() for p in self.items()}
-        with io.BytesIO() as f:
-            with ZipFile(
-                f,
-                "w",
-                compression=self.compression,
-                compresslevel=self.compresslevel,
-            ) as fp:
-                for path in sorted(items.keys()):
-                    fp.writestr(path, items[path])
-            f.seek(0)
-            data = f.read()
-        return data
+        in_memory_items = {
+            p: self._items[p]
+            for p in self.items()
+            if not isinstance(self[p], _OnDiskFile)
+        }
 
-    def decode(self, data: bytes, validate: bool = True, strict: bool = True):
-        """Take ZIP package as binary string. Read items from the
+        in_filesystem_items = {
+            p: self._items[p] for p in self.items() if isinstance(self[p], _OnDiskFile)
+        }
+
+        # create FiFo queue with limited size
+        queue = _StreamingQueue()
+
+        # function to generate zip content in a seperate thread
+        def _zip_generator():
+            try:
+                with ZipFile(
+                    queue,
+                    mode="w",
+                    compression=self.compression,
+                    compresslevel=self.compresslevel,
+                ) as zfp:
+                    for path in sorted(in_memory_items.keys()):
+                        zfp.writestr(path, in_memory_items[path].encode())
+
+                    for path in sorted(in_filesystem_items.keys()):
+                        zfp.write(
+                            in_filesystem_items[path].path,
+                            arcname=path,
+                            compress_type=in_filesystem_items[path].compression,
+                            compresslevel=in_filesystem_items[path].compression_level,
+                        )
+            except Exception as e:
+                queue.error = e
+            finally:
+                queue.close()
+
+        # start thread to fill the queue
+        thread = Thread(target=_zip_generator, daemon=True)
+        thread.start()
+
+        # yield next chunk if available
+        while True:
+            chunk = queue.get()
+            if chunk is None:
+                if queue.error is not None:
+                    raise queue.error
+                break
+
+            yield chunk
+
+    def decode(
+        self,
+        fp: io.RawIOBase | io.BufferedIOBase,
+        ignore_items: list[str] = [],
+        validate: bool = True,
+        strict: bool = True,
+    ):
+        """Take ZIP package as file object. Read items from the
         package and store them in this object.
 
-        Arguments:
-            data: Bytestring containing the ZIP DataContainer.
+        Args:
+            fp: File object to read from.
+            ignore_items: List of file paths that are not read into memory.
             validate: If true, validate the content.
             strict: If true, validate the hash, too.
         """
-        with io.BytesIO() as f:
-            f.write(data)
-            f.seek(0)
-            with ZipFile(f, "r") as fp:
-                items = {p: fp.read(p) for p in fp.namelist()}
+        with ZipFile(fp, "r") as zfp:
+            items = {p: zfp.read(p) for p in zfp.namelist() if p not in ignore_items}
+
+            # trigger decoding content.json
+            self["content.json"] = items["content.json"]
+            hash = self["content.json"]["hash"]
+            modelVersion = self["content.json"]["modelVersion"]
+
+            # validate hash value, if the legacy hash function is not required
+            if strict and hash and modelVersion >= "1.0.1":
+                for key in ("uuid", "created", "storageTime", "hash"):
+                    self["content.json"][key] = None
+
+                h = hashlib.sha256()
+                for p in sorted(zfp.namelist()):
+                    if p == "content.json":
+                        self._hash(h, p)
+                    else:
+                        with zfp.open(p) as f:
+                            self._hash(h, p, content=f)
+
+                # Check validity of hash
+                if hash != h.hexdigest():
+                    raise RuntimeError("Wrong hash!")
         self._store(items, validate, strict)
 
-    def write(self, fn: str, data: bytes = None):
+    def write(self, fn: str, data: bytes | None = None):
         """Write the container to a ZIP package file.
 
         If data is passed to the function, data will be written to the file.
@@ -536,26 +668,36 @@ class AbstractContainer(ABC):
         """
         if self.mutable:
             self["content.json"]["storageTime"] = timestamp()
+
         if data is None:
-            data = self.encode()
+            stream = self.encode()
         with open(fn, "wb") as fp:
-            fp.write(data)
+            if data is not None:
+                fp.write(data)
+            else:
+                for chunk in stream:
+                    fp.write(chunk)
         self.mutable = not (
             self["content.json"]["static"] or self["content.json"]["complete"]
         )
 
-    def _read(self, fn, strict=True):
+    def _read(self, fn: str, ignore_items: list[str] = [], strict: bool = True):
         """Read a ZIP package file and store it as container in this
         object.
         """
         with open(fn, "rb") as fp:
-            data = fp.read()
-        self.decode(data, False, strict)
+            self.decode(fp, ignore_items, False, strict)
+
         self.mutable = not (
             self["content.json"]["static"] or self["content.json"]["complete"]
         )
 
-    def upload(self, data: bytes = None, server: str = None, key: str = None):
+    def upload(
+        self,
+        data: bytes | None = None,
+        server: str | None = None,
+        key: str | None = None,
+    ):
         """Create a ZIP archive of the DataContainer and upload it to a server.
 
         If data is passed to the function, data will be written to the file.
@@ -584,13 +726,16 @@ class AbstractContainer(ABC):
         # Upload container as byte string
         if self.mutable:
             self["content.json"]["storageTime"] = timestamp()
-        if data is None:
-            data = self.encode()
+
         try:
+            streamer = _MultipartRequestStreamer(data or self.encode())
             response = requests.post(
                 server + "/api/datasets/",
-                files={"uploadfile": data},
-                headers={"Authorization": "Token " + key},
+                headers={
+                    "Authorization": "Token " + key,
+                    "Content-Type": f"multipart/form-data; boundary={streamer.boundary}",
+                },
+                data=streamer,
             )
         except Exception:
             response = None
@@ -607,9 +752,7 @@ class AbstractContainer(ABC):
                 if isinstance(data, dict) and data["static"]:
                     self._download(uuid=data["id"], server=server, key=key)
                     return
-            raise requests.HTTPError(
-                "400 Bad Request: Invalid container " + "content"
-            )
+            raise requests.HTTPError("400 Bad Request: Invalid container content")
 
         # Unauthorized access
         elif response.status_code == 403:
@@ -621,9 +764,7 @@ class AbstractContainer(ABC):
 
         # Invalid container format
         elif response.status_code == 415:
-            raise requests.HTTPError(
-                "415 Unsupported: Invalid container" + "format"
-            )
+            raise requests.HTTPError("415 Unsupported: Invalid container format")
 
         # Standard exception handler for other HTTP status codes
         else:
@@ -634,7 +775,9 @@ class AbstractContainer(ABC):
             self["content.json"]["static"] or self["content.json"]["complete"]
         )
 
-    def _download(self, uuid, strict=True, server=None, key=None):
+    def _download(
+        self, uuid, strict=True, server=None, key=None, ignore_items: list[str] = []
+    ):
         # Server name is required and must be provided either via config
         # file, environment variable or method parameter
         if server is None:
@@ -652,18 +795,17 @@ class AbstractContainer(ABC):
         # Download container as byte stream from the server
         try:
             url = server + "/api/datasets/" + uuid + "/download/"
-            response = requests.get(
-                url, headers={"Authorization": "Token " + key}
-            )
+            response = requests.get(url, headers={"Authorization": "Token " + key})
         except Exception:
             response = None
         if response is None:
             raise ConnectionError("Connection to server %s failed!" % server)
         data = response.content
+        fp = io.BytesIO(data)
 
         # Valid dataset: Store in this container
         if response.status_code == 200:
-            self.decode(data, False, strict)
+            self.decode(fp, ignore_items, False, strict)
 
         # Deleted dataset: Raise exception
         elif response.status_code == 204:
@@ -671,7 +813,7 @@ class AbstractContainer(ABC):
 
         # Replaced dataset: Store in this container
         elif response.status_code == 301:
-            self.decode(data, strict)
+            self.decode(fp, ignore_items, strict)
 
         # Unauthorized access
         elif response.status_code == 403:
@@ -769,3 +911,91 @@ class AbstractContainer(ABC):
         self["meta.json"]["orcid"] = (
             orcid[:4] + "-" + orcid[4:8] + "-" + orcid[8:12] + "-" + orcid[12:]
         )
+
+
+class _OnDiskFile:
+    """Class to represent an OnDiskFile that doesn't need to be encoded."""
+
+    def __init__(
+        self,
+        path: pathlib.Path,
+        compression: int | None = None,
+        compression_level: int | None = None,
+    ) -> None:
+        self.path: pathlib.Path = path
+        self.compression: int | None = compression
+        self.compression_level: int | None = compression_level
+
+
+class _StreamingQueue:
+    def __init__(self, chunk_size: int = 65536, maxsize: int = 8):
+        self.queue: Queue[bytes | None] = Queue(maxsize=maxsize)
+        self.buffer: bytearray = bytearray()
+        self.chunk_size: int = chunk_size
+        self._closed: bool = False
+        self.error: Exception | None = None
+
+    def write(self, b: bytes) -> int:
+        self.buffer += b
+        if len(self.buffer) >= self.chunk_size:
+            self.flush()
+        return len(b)
+
+    def flush(self):
+        if self.buffer:
+            try:
+                self.queue.put(bytes(self.buffer), block=True, timeout=5)
+            except Exception as e:
+                self.error = e
+            self.buffer.clear()
+
+    def seekable(self) -> bool:
+        return False
+
+    def close(self):
+        if not self._closed:
+            self.flush()
+            try:
+                self.queue.put(None, block=True, timeout=5)
+            except Exception as e:
+                self.error = e
+            self._closed = True
+
+    def get(self) -> bytes | None:
+        item = self.queue.get(block=True)
+        if item is None and self.error:
+            raise self.error
+        return item
+
+
+class _MultipartRequestStreamer:
+    def __init__(self, data: io.RawIOBase | bytes, boundary: str | None = None) -> None:
+        self.boundary: str = f"--{boundary or uuid.uuid4().hex}"
+        self.data: io.RawIOBase | io.BytesIO
+        if isinstance(data, bytes):
+            self.data = io.BytesIO(data)
+        else:
+            self.data = data
+
+        self._head_sent: bool = False
+        self._file_sent: bool = False
+
+    def __iter__(self):
+        return self
+
+    def _head(self) -> str:
+        return f'--{self.boundary}\r\nContent-Disposition: form-data; name="uploadfile"; filename="dataset.zdc"\r\nContent-Type: application/octet-stream\r\n\r\n'
+
+    def __next__(self) -> bytes:
+        if not self._head_sent:
+            self._head_sent = True
+            return self._head().encode("utf-8")
+
+        if not self._file_sent:
+            try:
+                chunk = next(self.data)
+                return chunk
+            except StopIteration:
+                self._file_sent = True
+                return f"\r\n--{self.boundary}--\r\n".encode("utf-8")
+        raise StopIteration

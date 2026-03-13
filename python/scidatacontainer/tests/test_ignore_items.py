@@ -5,8 +5,8 @@ from scidatacontainer import Container
 from . import get_test_container
 
 
-class FileBinaryTest(TestCase):
-    def test_encode_decode(self):
+class FileIOObjectTest(TestCase):
+    def test_access(self):
         a = get_test_container()
 
         text = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed "
@@ -23,13 +23,14 @@ class FileBinaryTest(TestCase):
 
         a.write("test.zdc")
 
-        b = Container(file="test.zdc")
+        b = Container(file="test.zdc", ignore_items=["data/test.exe"])
 
-        self.assertEqual(a["data/test.exe"], b["data/test.exe"])
+        with self.assertRaisesRegex(
+            KeyError, r"Item 'data/test\.exe' was ignored while reading the file\."
+        ):
+            b["data/test.exe"]
 
-        self.assertEqual(b["data/test.exe"].decode("utf-8"), text)
-
-    def test_hash(self):
+    def test_release(self):
         a = get_test_container()
 
         text = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed "
@@ -42,21 +43,19 @@ class FileBinaryTest(TestCase):
         btext = text.encode("utf-8")
 
         a["data/test.exe"] = btext
+        self.assertEqual(btext, a["data/test.exe"])
 
-        a.freeze()
         a.write("test.zdc")
+        b = Container(file="test.zdc", ignore_items=["data/test.exe"])
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"Modifying a file that was only partially read is not supported! Make sure 'ignore_items' is empty during initialisation.",
+        ):
+            b.release()
 
-        b = Container(file="test.zdc")
-        b.hash()
-        self.assertEqual(a["content.json"]["hash"], b["content.json"]["hash"])
-        self.assertEqual(
-            b["content.json"]["hash"],
-            "f66ca1f63274a613e8769902349cd6182403a45fb75df2db9afb2fe0426b9bec",
-        )
-
-    def test_legacy_hash(self):
+    def test_load_incomplete(self):
         a = get_test_container()
-        a["content.json"]["modelVersion"] = "1.0.0"
+        a["content.json"]["complete"] = False
 
         text = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed "
         text += "do eiusmod tempor incididunt ut labore et dolore magna "
@@ -68,14 +67,12 @@ class FileBinaryTest(TestCase):
         btext = text.encode("utf-8")
 
         a["data/test.exe"] = btext
+        self.assertEqual(btext, a["data/test.exe"])
 
-        a.freeze()
         a.write("test.zdc")
 
-        b = Container(file="test.zdc")
-        b.hash()
-        self.assertEqual(a["content.json"]["hash"], b["content.json"]["hash"])
-        self.assertEqual(
-            b["content.json"]["hash"],
-            "dad3134b6b7dd2f50557ce5d891eb74faac9dcf28e03e51194d21ad4570be7b5",
-        )
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"Partial loading of items only supported for immutable containers!",
+        ):
+            Container(file="test.zdc", ignore_items=["data/test.exe"])

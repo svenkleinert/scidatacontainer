@@ -17,11 +17,10 @@
 #
 ##########################################################################
 
-from abc import ABC, abstractmethod
 import hashlib
 import json
 import typing
-
+from abc import ABC, abstractmethod
 
 ##########################################################################
 # Data conversion classes
@@ -102,7 +101,6 @@ class TextFile(AbstractFile):
 
 
 class JsonFile(AbstractFile):
-
     """Data conversion class for a JSON file represented as Python
     dictionary."""
 
